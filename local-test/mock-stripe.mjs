@@ -40,8 +40,11 @@ const server = http.createServer((req, res) => {
         status: "open",
         url: `https://checkout.stripe.com/c/pay/${id}#mock`,
         mode: p.get("mode"),
+        // recorded so tests can assert EXACTLY what the worker sent to Stripe
         unit_amount: p.get("line_items[0][price_data][unit_amount]"),
-        currency: p.get("line_items[0][price_data][currency]"),
+        currency: p.get("line_items[0][currency]") || p.get("line_items[0][price_data][currency]"),
+        price_id: p.get("line_items[0][price]") || null,
+        product_name: p.get("line_items[0][price_data][product_data][name]") || null,
         metadata: {
           sku: p.get("metadata[sku]"),
           product_id: p.get("metadata[product_id]"),

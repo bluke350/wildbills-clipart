@@ -20,31 +20,45 @@ async function onRequestPost(context) {
       );
     }
     const STRIPE_API_BASE = env.STRIPE_API_BASE || "https://api.stripe.com";
-    const body = await request.json();
-    const { sku, name, price, product_id, stripe_price_id } = body;
+    const body = await request.json().catch(() => ({}));
     const origin = new URL(request.url).origin;
-    const successUrl = `${origin}/success.html?session_id={CHECKOUT_SESSION_ID}&sku=${encodeURIComponent(sku || "")}`;
-    const cancelUrl = `${origin}/product.html?sku=${encodeURIComponent(sku || "")}&canceled=true`;
-    const itemPriceInCents = Math.round((parseFloat(price) || 15) * 100);
-    const itemName = name || (sku ? `Clipart Bundle ${sku}` : "Clipart Bundle");
-    const itemProductId = product_id || sku || "WB-BUNDLE";
+    /* SERVER-SIDE PRICING: the amount charged is resolved from the embedded
+       catalogue by SKU. Client-supplied price/name/stripe_price_id/product_id
+       values are never trusted, so a tampered request body cannot make Stripe
+       charge less than the advertised price. Fail closed on unknown/missing SKU. */
+    const requestedSku = body && body.sku ? String(body.sku).trim() : "";
+    const product = requestedSku ? wvFindProduct(requestedSku) : null;
+    if (!product || typeof product.price !== "number" || !(product.price > 0)) {
+      return new Response(
+        JSON.stringify({ error: "Unknown or missing SKU. Prices are resolved server-side from the catalogue; send a valid product SKU." }),
+        { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+      );
+    }
+    const sku = product.sku;
+    const itemPriceInCents = Math.round(product.price * 100);
+    const itemName = product.name || product.title || `Clipart Bundle ${sku}`;
+    const itemProductId = sku;
+    const successUrl = `${origin}/success.html?session_id={CHECKOUT_SESSION_ID}&sku=${encodeURIComponent(sku)}`;
+    const cancelUrl = `${origin}/product.html?sku=${encodeURIComponent(sku)}&canceled=true`;
     const params = new URLSearchParams();
     params.append("mode", "payment");
     params.append("success_url", successUrl);
     params.append("cancel_url", cancelUrl);
-    if (stripe_price_id) {
-      params.append("line_items[0][price]", stripe_price_id);
+    if (product.stripe_price_id) {
+      // A Stripe Price object may only come from the catalogue entry itself -
+      // never from the client body.
+      params.append("line_items[0][price]", String(product.stripe_price_id));
       params.append("line_items[0][quantity]", "1");
     } else {
       params.append("line_items[0][price_data][currency]", "usd");
       params.append("line_items[0][price_data][product_data][name]", itemName);
       params.append("line_items[0][price_data][product_data][tax_code]", "txcd_10000000");
-      params.append("line_items[0][price_data][product_data][metadata][sku]", sku || "");
+      params.append("line_items[0][price_data][product_data][metadata][sku]", sku);
       params.append("line_items[0][price_data][product_data][metadata][product_id]", itemProductId);
       params.append("line_items[0][price_data][unit_amount]", itemPriceInCents.toString());
       params.append("line_items[0][quantity]", "1");
     }
-    params.append("metadata[sku]", sku || "");
+    params.append("metadata[sku]", sku);
     params.append("metadata[product_id]", itemProductId);
     const stripeResponse = await fetch(`${STRIPE_API_BASE}/v1/checkout/sessions`, {
       method: "POST",
@@ -142,7 +156,11 @@ async function onRequestGet(context) {
     "Access-Control-Allow-Headers": "Content-Type"
   };
   const adminSecret = url.searchParams.get("key");
-  if (adminSecret !== "wildbill2026") {
+  /* The real key is the LEADS_ADMIN_KEY dashboard secret / env var. The literal
+     below is a MIGRATION FALLBACK ONLY so existing access keeps working until
+     LEADS_ADMIN_KEY is set - once it is configured, delete the literal. */
+  const expectedKey = String(env.LEADS_ADMIN_KEY || "wildbill2026");
+  if (!adminSecret || !wvTimingSafeEqual(String(adminSecret), expectedKey)) {
     return new Response(JSON.stringify({ error: "Unauthorized access" }), { status: 401, headers: corsHeaders });
   }
   if (!env.LEADS_KV) {
@@ -247,7 +265,7 @@ async function onRequestPost3(context) {
 __name(onRequestPost3, "onRequestPost3");
 __name2(onRequestPost3, "onRequestPost");
 // generateB2DownloadUrl and its hardcoded B2 credentials were removed: delivery now
-// goes through the private R2 binding PAID_BUNDLES with signed tokens only.
+// goes through the private R2 binding (PAID_BUNDLES or wildbills) with signed tokens only.
 async function onRequest(context) {
   const BASE_URL = "https://clipart.wildbillsproplans.com";
   const INDEXNOW_KEY = "pixelforge2026indexnowkey";
@@ -1448,15 +1466,23 @@ function wvParseRange(header, size) {
   if (!Number.isInteger(end) || end < start) return "invalid";
   return { offset: start, length: end - start + 1 };
 }
+/* The paid zips live in ONE bucket that may be bound under either name:
+   PAID_BUNDLES (this repo's docs) or wildbills (the owner's existing binding).
+   Resolve it once here; the bucket is the same either way, so object keys are
+   unchanged and the owner never has to add a second R2 binding in the dashboard. */
+function wvPaidBucket(env) {
+  return env.PAID_BUNDLES || env.wildbills || null;
+}
 /* Gated download: /api/download?token=... and /api/download/<token>.
    The legacy public shape (?sku=/&file=) is rejected loudly - no redirect,
-   no public bucket URL, ever. Streams from the PRIVATE binding PAID_BUNDLES. */
+   no public bucket URL, ever. Streams from the PRIVATE R2 binding. */
 async function onRequest2(context) {
   const { request, env } = context;
   const url = new URL(request.url);
   try {
-    if (!env.PAID_BUNDLES) {
-      return wvJson({ error: "server misconfigured: PAID_BUNDLES R2 binding is missing" }, 500);
+    const bucket = wvPaidBucket(env);
+    if (!bucket) {
+      return wvJson({ error: "server misconfigured: no R2 binding for paid bundles (expected PAID_BUNDLES or wildbills)" }, 500);
     }
     const token = context.params && context.params.token ? decodeURIComponent(context.params.token) : url.searchParams.get("token");
     if (!token) {
@@ -1468,7 +1494,7 @@ async function onRequest2(context) {
     }
     const v = await wvVerifyToken(token, env);
     if (!v.ok) return wvJson({ error: v.error, sku: v.sku }, v.status);
-    const meta = await env.PAID_BUNDLES.head(v.objectKey);
+    const meta = await bucket.head(v.objectKey);
     if (!meta) return wvJson({ error: "bundle file not found in storage", sku: v.sku }, 404);
     const headers = {
       "content-type": "application/zip",
@@ -1486,7 +1512,7 @@ async function onRequest2(context) {
       });
     }
     if (range) {
-      const obj = await env.PAID_BUNDLES.get(v.objectKey, { range: { offset: range.offset, length: range.length } });
+      const obj = await bucket.get(v.objectKey, { range: { offset: range.offset, length: range.length } });
       if (!obj) return wvJson({ error: "bundle file not found in storage", sku: v.sku }, 404);
       return new Response(obj.body, {
         status: 206,
@@ -1497,7 +1523,7 @@ async function onRequest2(context) {
         }
       });
     }
-    const obj = await env.PAID_BUNDLES.get(v.objectKey);
+    const obj = await bucket.get(v.objectKey);
     if (!obj) return wvJson({ error: "bundle file not found in storage", sku: v.sku }, 404);
     return new Response(obj.body, { status: 200, headers: { ...headers, "content-length": String(meta.size) } });
   } catch (err) {

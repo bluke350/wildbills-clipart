@@ -1,0 +1,17 @@
+# LOCAL TEST ONLY — proves real static previews are served by the platform
+# asset layer and the merged worker's catch-all cannot shadow them.
+# This mirrors a deployment WITH an assets directory bound as ASSETS.
+name = "wildbills-vault-assets-local"
+main = "../wildbills-vault-worker.js"
+compatibility_date = "2025-01-01"
+
+[vars]
+TOKEN_TTL_SECONDS = "3600"
+
+[[r2_buckets]]
+binding = "PAID_BUNDLES"
+bucket_name = "wildbills-vault-bundles-local"
+
+[assets]
+directory = "./fixture/assets"
+binding = "ASSETS"

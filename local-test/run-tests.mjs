@@ -13,11 +13,22 @@
  * /success page / redacted /products.json + /static/products.json / clean 404s /
  * existing routes (auto-promote, free-sample admin, CORS preflight).
  *
- * Requires: mock-stripe.mjs running, `npx wrangler dev --port 8787` running,
- * local R2 seeded with fixture/bundle_bass_fishing.zip.
+ * Self-contained: the suite spawns mock-stripe.mjs and FOUR wrangler dev
+ * configurations itself (see ORCHESTRATION below) and kills them on exit.
+ *
+ * Extra coverage on top of the first merge:
+ *   - server-side pricing: client price/stripe_price_id/name ignored, unknown
+ *     or missing SKU -> 400 (fixes POST {"sku":...,"price":0.01})
+ *   - R2 binding fallback: env.wildbills delivers when PAID_BUNDLES is absent
+ *     (owner's real binding name; zero dashboard changes needed)
+ *   - no-binding configuration fails closed, error names both binding names
+ *   - LEADS_ADMIN_KEY resolves from env and overrides the migration fallback
+ *   - static previews are served by the platform asset layer; the merged
+ *     catch-all cannot shadow a real asset and 404s unknown paths cleanly
  */
 import crypto from "node:crypto";
 import fs from "node:fs";
+import { spawn, spawnSync } from "node:child_process";
 
 const BASE = process.env.BASE_URL || "http://127.0.0.1:8787";
 const SECRET = "local-test-signing-secret-do-not-use-in-prod";
@@ -60,6 +71,66 @@ const expectedZip = fs.readFileSync(new URL("./fixture/bundle_bass_fishing.zip",
 const expectedSize = expectedZip.length;
 
 console.log(`Testing merged worker at ${BASE}\n`);
+
+/* ===================== ORCHESTRATION =====================
+   Spawns everything the suite needs and tears it down on exit:
+   - mock Stripe API on 127.0.0.1:9799 (up for the whole run)
+   - :8787 wrangler dev with wrangler.toml      (R2 bound PAID_BUNDLES, no ASSETS)
+   - :8788 wrangler dev with wrangler.assets.toml (assets directory bound ASSETS)
+   - :8789 wrangler dev with wrangler.alt.toml  (R2 bound `wildbills`, LEADS_ADMIN_KEY set)
+   - :8790 wrangler dev with wrangler.nobind.toml (NO R2 binding at all)
+   Local R2 state lives in /tmp so nothing is written under /home. */
+const HERE = new URL(".", import.meta.url).pathname;
+const WRANGLER = "node_modules/wrangler/bin/wrangler.js";
+const SPAWNED = [];
+function killSpawned() {
+  for (const p of SPAWNED) { try { process.kill(-p.pid, "SIGKILL"); } catch {} }
+  SPAWNED.length = 0;
+}
+process.on("exit", killSpawned);
+process.on("SIGINT", () => { killSpawned(); process.exit(130); });
+
+function startProc(args, logPath) {
+  const log = fs.openSync(logPath, "a");
+  const p = spawn(process.execPath, args, {
+    cwd: HERE, detached: true, stdio: ["ignore", log, log],
+    env: { ...process.env, CI: "true", WRANGLER_SEND_METRICS: "false", NODE_OPTIONS: "" },
+  });
+  SPAWNED.push(p);
+  return p;
+}
+function stopProc(p) {
+  try { process.kill(-p.pid, "SIGTERM"); } catch {}
+  const i = SPAWNED.indexOf(p);
+  if (i >= 0) SPAWNED.splice(i, 1);
+}
+async function waitReady(url, label, timeoutMs = 120000) {
+  const t0 = Date.now();
+  for (;;) {
+    try { await fetch(url); return; } catch {}
+    if (Date.now() - t0 > timeoutMs) throw new Error(`${label} not ready on ${url} after ${timeoutMs}ms`);
+    await new Promise((res) => setTimeout(res, 500));
+  }
+}
+function seedR2(config, persistTo) {
+  const common = { cwd: HERE, encoding: "utf8", env: { ...process.env, CI: "true", WRANGLER_SEND_METRICS: "false" } };
+  const key = "wildbills-vault-bundles-local/bundle_bass_fishing.zip";
+  let r = spawnSync(process.execPath, [WRANGLER, "r2", "object", "put", key, "--path", "fixture/bundle_bass_fishing.zip", "--local", "--config", config, "--persist-to", persistTo], common);
+  if (r.status !== 0) r = spawnSync(process.execPath, [WRANGLER, "r2", "object", "put", key, "--file", "fixture/bundle_bass_fishing.zip", "--local", "--config", config, "--persist-to", persistTo], common);
+  if (r.status !== 0) throw new Error(`R2 seed failed for ${config}: ${(r.stdout || "") + (r.stderr || "")}`);
+  console.log(`  (local R2 seeded for ${config})`);
+}
+async function startWorker(port, config, persistTo) {
+  const p = startProc([WRANGLER, "dev", "--port", String(port), "--ip", "127.0.0.1", "--config", config, "--persist-to", persistTo], `/tmp/wrangler-${port}.log`);
+  await waitReady(`http://127.0.0.1:${port}/products.json`, `wrangler dev :${port} (${config})`);
+  console.log(`  (worker up on :${port} with ${config})`);
+  return p;
+}
+
+startProc(["mock-stripe.mjs"], "/tmp/mock-stripe.log");
+await waitReady("http://127.0.0.1:9799/v1/checkout/sessions/__probe", "mock-stripe");
+seedR2("wrangler.toml", "/tmp/wv-state-8787");
+const w8787 = await startWorker(8787, "wrangler.toml", "/tmp/wv-state-8787");
 
 /* ---------- 1. no token / legacy public shape ---------- */
 {
@@ -243,6 +314,97 @@ console.log(`Testing merged worker at ${BASE}\n`);
 {
   const r = await req("/this/path/does/not/exist.png");
   check("unknown path -> clean 404 JSON (not 500/1101)", r.status === 404 && (r.headers["content-type"] || "").includes("json"), `status=${r.status} body=${r.text.slice(0, 40)}`);
+}
+
+/* ---------- 14. server-side pricing: client-supplied values are ignored ---------- */
+{
+  const post = (obj) => req("/api/create-checkout", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(obj) });
+  const mockGet = async (id) => (await fetch(`http://127.0.0.1:9799/v1/checkout/sessions/${id}`)).json();
+
+  const r = await post({ sku: SKU, price: 0.01 });
+  check("POST price=0.01 with known SKU -> 200", r.status === 200, `status=${r.status} ${r.text.slice(0, 80)}`);
+  const s1 = await mockGet(r.json?.sessionId || "");
+  check("client price 0.01 IGNORED - Stripe is sent the catalogue 2499", s1.unit_amount === "2499", `unit_amount=${s1.unit_amount}`);
+  check("no client-supplied Stripe price id forwarded", s1.price_id == null, `price_id=${s1.price_id}`);
+
+  const r2 = await post({ sku: SKU, name: "HACKED NAME", price: 0.01, product_id: "pwn", stripe_price_id: "price_1HACKED" });
+  check("hostile body (price/name/product_id/stripe_price_id) -> 200", r2.status === 200, `status=${r2.status}`);
+  const s2 = await mockGet(r2.json?.sessionId || "");
+  check("hostile price ignored -> unit_amount 2499", s2.unit_amount === "2499", `unit_amount=${s2.unit_amount}`);
+  check("hostile name ignored - catalogue name sent to Stripe", (s2.product_name || "").toLowerCase().includes("bass fishing"), s2.product_name || "(none)");
+  check("hostile stripe_price_id ignored", s2.price_id == null, `price_id=${s2.price_id}`);
+  check("metadata sku/product_id resolved from the catalogue", s2.metadata?.sku === SKU && s2.metadata?.product_id === SKU, JSON.stringify(s2.metadata));
+
+  const r3 = await post({ sku: "WB-BND-999", price: 0.01 });
+  check("unknown SKU -> 400 (fail closed)", r3.status === 400, `status=${r3.status} ${r3.text.slice(0, 80)}`);
+  const r4 = await post({ price: 0.01 });
+  check("missing SKU -> 400 (fail closed)", r4.status === 400, `status=${r4.status}`);
+  const r5 = await req("/api/create-checkout", { method: "POST", headers: { "content-type": "application/json" }, body: "{not json" });
+  check("malformed body -> 400 (fail closed)", r5.status === 400, `status=${r5.status} ${r5.text.slice(0, 60)}`);
+}
+
+stopProc(w8787);
+
+/* ---------- 15. static previews served by the platform asset layer ---------- */
+{
+  console.log("\n[phase 2] wrangler.assets.toml on :8788 (assets directory bound as ASSETS)");
+  const w8788 = await startWorker(8788, "wrangler.assets.toml", "/tmp/wv-state-8788");
+  try {
+    const A = "http://127.0.0.1:8788";
+    const fixtureJpg = fs.readFileSync(new URL("./fixture/assets/static/previews/WB-BND-001_preview.jpg", import.meta.url));
+    const res = await fetch(A + "/static/previews/WB-BND-001_preview.jpg");
+    const buf = Buffer.from(await res.arrayBuffer());
+    check("GET /static/previews/WB-BND-001_preview.jpg -> 200 (served, not shadowed)", res.status === 200, `status=${res.status}`);
+    check("preview content-type image/jpeg", (res.headers.get("content-type") || "").includes("image/jpeg"), res.headers.get("content-type") || "");
+    check("preview bytes identical to the asset on disk", buf.equals(fixtureJpg), `${buf.length}B vs ${fixtureJpg.length}B`);
+    const miss = await fetch(A + "/static/previews/definitely-not-there.jpg");
+    check("missing asset path -> 404 clean (no 500/1101)", miss.status === 404, `status=${miss.status}`);
+    const api = await fetch(A + "/api/download", { redirect: "manual" });
+    check("API routes still reach the worker with assets bound (-> 400)", api.status === 400, `status=${api.status}`);
+    const cat = await fetch(A + "/products.json");
+    const catText = await cat.text();
+    check("/products.json still served by the worker with assets bound", cat.status === 200 && catText.includes("WB-BND-003"), `status=${cat.status}`);
+    check("catalogue redaction intact with assets bound", !catText.includes("r2.dev"), "");
+  } finally { stopProc(w8788); }
+}
+
+/* ---------- 16+17. R2 binding fallback (env.wildbills) + LEADS_ADMIN_KEY env ---------- */
+{
+  console.log("\n[phase 3] wrangler.alt.toml on :8789 (R2 bound as `wildbills`, LEADS_ADMIN_KEY set)");
+  seedR2("wrangler.alt.toml", "/tmp/wv-state-8789");
+  const w8789 = await startWorker(8789, "wrangler.alt.toml", "/tmp/wv-state-8789");
+  try {
+    const B = "http://127.0.0.1:8789";
+    const tok = mint(SKU);
+    const res = await fetch(B + `/api/download/${tok}`, { redirect: "manual" });
+    const buf = Buffer.from(await res.arrayBuffer());
+    check("valid token delivered via env.wildbills (PAID_BUNDLES absent) -> 200", res.status === 200, `status=${res.status}`);
+    check("wildbills-binding bytes sha256-identical to the object", crypto.createHash("sha256").update(buf).digest("hex") === crypto.createHash("sha256").update(expectedZip).digest("hex"), `${buf.length}B`);
+    check("content-type application/zip via wildbills binding", (res.headers.get("content-type") || "").includes("application/zip"), res.headers.get("content-type") || "");
+    const res2 = await fetch(B + `/api/download/${tok}`, { headers: { range: "bytes=0-99" } });
+    const b2 = Buffer.from(await res2.arrayBuffer());
+    check("range request via env.wildbills -> 206 / 100B", res2.status === 206 && b2.length === 100, `status=${res2.status} len=${b2.length}`);
+
+    const envOk = await fetch(B + "/api/free-sample?key=alt-config-admin-key-123");
+    check("LEADS_ADMIN_KEY env value accepted (not 401)", envOk.status !== 401, `status=${envOk.status} (500 = LEADS_KV unbound locally, as designed)`);
+    const envWins = await fetch(B + "/api/free-sample?key=wildbill2026");
+    check("migration fallback literal rejected once LEADS_ADMIN_KEY is set (env wins)", envWins.status === 401, `status=${envWins.status}`);
+    const noKey = await fetch(B + "/api/free-sample");
+    check("no key -> 401", noKey.status === 401, `status=${noKey.status}`);
+  } finally { stopProc(w8789); }
+}
+
+/* ---------- 18. no R2 binding at all -> fail closed, naming both bindings ---------- */
+{
+  console.log("\n[phase 4] wrangler.nobind.toml on :8790 (NO R2 binding)");
+  const w8790 = await startWorker(8790, "wrangler.nobind.toml", "/tmp/wv-state-8790");
+  try {
+    const C = "http://127.0.0.1:8790";
+    const res = await fetch(C + `/api/download/${mint(SKU)}`, { redirect: "manual" });
+    const text = await res.text();
+    check("download with NO R2 binding -> 500 fail-closed", res.status === 500, `status=${res.status}`);
+    check("misconfiguration error names both bindings", text.includes("PAID_BUNDLES") && text.includes("wildbills"), text.slice(0, 120));
+  } finally { stopProc(w8790); }
 }
 
 console.log(`\n${pass} passed, ${fail} failed`);
