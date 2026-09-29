@@ -901,9 +901,9 @@ var products_default = [
   },
   {
     sku: "WB-BND-016",
-    title: "Stranger Things Tv Show Clipart Collection",
-    name: "Stranger Things Tv Show Clipart Mega-Bundle",
-    category: "Stranger Things Tv Show",
+    title: "Haunted Small Town Horror Clipart Collection",
+    name: "Haunted Small Town Horror Clipart Mega-Bundle",
+    category: "Haunted Small Town Horror",
     price: 24.99,
     original_price: 79.99,
     preview_url: "/static/previews/WB-BND-016_preview.jpg",
@@ -915,13 +915,13 @@ var products_default = [
     file_count: 1800,
     design_count: 225,
     size_mb: 150,
-    description: "\u2728 STRANGER THINGS TV SHOW MEGA CLIPART BUNDLE (225 DESIGNS / 1800 FILES) \u2728\n\nInstantly elevate your print-on-demand shop, sticker collection, and craft projects with the ultimate Stranger Things Tv Show Clipart Bundle! Created in crisp 3072x3072 resolution, every asset comes isolated with a clean transparent background and multi-vector formats.\n\n\u{1F4E6} WHAT IS INCLUDED IN YOUR DOWNLOAD:\n--------------------------------------------------\n\u2714 225 High-Resolution Asset Designs (3072 x 3072 pixels, 300 DPI)\n\u2714 Transparent PNG Files (Crisp isolated backgrounds)\n\u2714 Scalable Vector SVG Files (Fully editable & layered)\n\u2714 Master EPS & DXF Files (For vinyl cutters, Silhouette, Cricut, Laser)\n\u2714 Web-Optimized WEBP & JPG Previews\n\u2714 Print-Ready PDF & TIFF Master Files\n\u2714 Full Commercial Use License Included\n\n\u{1F3A8} PERFECT FOR:\n--------------------------------------------------\n\u2022 Sublimation Tumblers, Mugs, & Apparel (Printify / Printful / Gelato)\n\u2022 Sticker Sheet Crafts & Cricut Cut Projects\n\u2022 Twitch / YouTube Stream Overlays & Banners\n\u2022 Digital Planners, Scrapbooking, & Stationery\n\u2022 Wall Art Prints & Graphic Tee Branding\n\n\u{1F680} INSTANT DELIVERY ACCESS:\nUpon purchase, you will receive an official Delivery PDF containing your high-speed cloud link to instantly access and download your organized ZIP folders.\n",
-    seo_title: "Stranger Things Tv Show Clipart Bundle, 225 PNG & SVG Vectors, Sublimation Graphic PNGs, Commercial Use",
+    description: "\u2728 HAUNTED SMALL TOWN HORROR MEGA CLIPART BUNDLE (225 DESIGNS / 1800 FILES) \u2728\n\nInstantly elevate your print-on-demand shop, sticker collection, and craft projects with the ultimate Haunted Small Town Horror Clipart Bundle! Created in crisp 3072x3072 resolution, every asset comes isolated with a clean transparent background and multi-vector formats.\n\n\u{1F4E6} WHAT IS INCLUDED IN YOUR DOWNLOAD:\n--------------------------------------------------\n\u2714 225 High-Resolution Asset Designs (3072 x 3072 pixels, 300 DPI)\n\u2714 Transparent PNG Files (Crisp isolated backgrounds)\n\u2714 Scalable Vector SVG Files (Fully editable & layered)\n\u2714 Master EPS & DXF Files (For vinyl cutters, Silhouette, Cricut, Laser)\n\u2714 Web-Optimized WEBP & JPG Previews\n\u2714 Print-Ready PDF & TIFF Master Files\n\u2714 Full Commercial Use License Included\n\n\u{1F3A8} PERFECT FOR:\n--------------------------------------------------\n\u2022 Sublimation Tumblers, Mugs, & Apparel (Printify / Printful / Gelato)\n\u2022 Sticker Sheet Crafts & Cricut Cut Projects\n\u2022 Twitch / YouTube Stream Overlays & Banners\n\u2022 Digital Planners, Scrapbooking, & Stationery\n\u2022 Wall Art Prints & Graphic Tee Branding\n\n\u{1F680} INSTANT DELIVERY ACCESS:\nUpon purchase, you will receive an official Delivery PDF containing your high-speed cloud link to instantly access and download your organized ZIP folders.\n",
+    seo_title: "Haunted Small Town Horror Clipart Bundle, 225 PNG & SVG Vectors, Sublimation Graphic PNGs, Commercial Use",
     etsy_tags: [
-      "stranger things tv s",
-      "stranger things tv s",
-      "stranger things tv s",
-      "stranger bundle",
+      "haunted small town h",
+      "haunted small town h",
+      "haunted small town h",
+      "haunted bundle",
       "sublimation png",
       "vector graphics",
       "commercial license",
@@ -938,9 +938,9 @@ var products_default = [
   },
   {
     sku: "WB-BND-017",
-    title: "The Red Queen From Alice In Wonderland Clipart Collection",
-    name: "The Red Queen From Alice In Wonderland Clipart Mega-Bundle",
-    category: "The Red Queen From Alice In Wonderland",
+    title: "Crimson Queen Gothic Clipart Collection",
+    name: "Crimson Queen Gothic Clipart Mega-Bundle",
+    category: "Crimson Queen Gothic",
     price: 24.99,
     original_price: 79.99,
     preview_url: "/static/previews/WB-BND-017_preview.jpg",
@@ -952,13 +952,13 @@ var products_default = [
     file_count: 488,
     design_count: 61,
     size_mb: 150,
-    description: "\u2728 THE RED QUEEN FROM ALICE IN WONDERLAND MEGA CLIPART BUNDLE (61 DESIGNS / 488 FILES) \u2728\n\nInstantly elevate your print-on-demand shop, sticker collection, and craft projects with the ultimate The Red Queen From Alice In Wonderland Clipart Bundle! Created in crisp 3072x3072 resolution, every asset comes isolated with a clean transparent background and multi-vector formats.\n\n\u{1F4E6} WHAT IS INCLUDED IN YOUR DOWNLOAD:\n--------------------------------------------------\n\u2714 61 High-Resolution Asset Designs (3072 x 3072 pixels, 300 DPI)\n\u2714 Transparent PNG Files (Crisp isolated backgrounds)\n\u2714 Scalable Vector SVG Files (Fully editable & layered)\n\u2714 Master EPS & DXF Files (For vinyl cutters, Silhouette, Cricut, Laser)\n\u2714 Web-Optimized WEBP & JPG Previews\n\u2714 Print-Ready PDF & TIFF Master Files\n\u2714 Full Commercial Use License Included\n\n\u{1F3A8} PERFECT FOR:\n--------------------------------------------------\n\u2022 Sublimation Tumblers, Mugs, & Apparel (Printify / Printful / Gelato)\n\u2022 Sticker Sheet Crafts & Cricut Cut Projects\n\u2022 Twitch / YouTube Stream Overlays & Banners\n\u2022 Digital Planners, Scrapbooking, & Stationery\n\u2022 Wall Art Prints & Graphic Tee Branding\n\n\u{1F680} INSTANT DELIVERY ACCESS:\nUpon purchase, you will receive an official Delivery PDF containing your high-speed cloud link to instantly access and download your organized ZIP folders.\n",
-    seo_title: "The Red Queen From Alice In Wonderland Clipart Bundle, 61 PNG & SVG Vectors, Sublimation Graphic PNGs, Commercial Use",
+    description: "\u2728 CRIMSON QUEEN GOTHIC MEGA CLIPART BUNDLE (61 DESIGNS / 488 FILES) \u2728\n\nInstantly elevate your print-on-demand shop, sticker collection, and craft projects with the ultimate Crimson Queen Gothic Clipart Bundle! Created in crisp 3072x3072 resolution, every asset comes isolated with a clean transparent background and multi-vector formats.\n\n\u{1F4E6} WHAT IS INCLUDED IN YOUR DOWNLOAD:\n--------------------------------------------------\n\u2714 61 High-Resolution Asset Designs (3072 x 3072 pixels, 300 DPI)\n\u2714 Transparent PNG Files (Crisp isolated backgrounds)\n\u2714 Scalable Vector SVG Files (Fully editable & layered)\n\u2714 Master EPS & DXF Files (For vinyl cutters, Silhouette, Cricut, Laser)\n\u2714 Web-Optimized WEBP & JPG Previews\n\u2714 Print-Ready PDF & TIFF Master Files\n\u2714 Full Commercial Use License Included\n\n\u{1F3A8} PERFECT FOR:\n--------------------------------------------------\n\u2022 Sublimation Tumblers, Mugs, & Apparel (Printify / Printful / Gelato)\n\u2022 Sticker Sheet Crafts & Cricut Cut Projects\n\u2022 Twitch / YouTube Stream Overlays & Banners\n\u2022 Digital Planners, Scrapbooking, & Stationery\n\u2022 Wall Art Prints & Graphic Tee Branding\n\n\u{1F680} INSTANT DELIVERY ACCESS:\nUpon purchase, you will receive an official Delivery PDF containing your high-speed cloud link to instantly access and download your organized ZIP folders.\n",
+    seo_title: "Crimson Queen Gothic Clipart Bundle, 61 PNG & SVG Vectors, Sublimation Graphic PNGs, Commercial Use",
     etsy_tags: [
-      "the red queen from a",
-      "the red queen from a",
-      "the red queen from a",
-      "the bundle",
+      "crimson queen gothic",
+      "crimson queen gothic",
+      "crimson queen gothic",
+      "crimson bundle",
       "sublimation png",
       "vector graphics",
       "commercial license",
@@ -1012,9 +1012,9 @@ var products_default = [
   },
   {
     sku: "WB-BND-019",
-    title: "Twisted Alice In Wonderland Twisted Dark Evil Clipart Collection",
-    name: "Twisted Alice In Wonderland Twisted Dark Evil Clipart Mega-Bundle",
-    category: "Twisted Alice In Wonderland Twisted Dark Evil",
+    title: "Twisted Gothic Dark Evil Clipart Collection",
+    name: "Twisted Gothic Dark Evil Clipart Mega-Bundle",
+    category: "Twisted Gothic Dark Evil",
     price: 24.99,
     original_price: 79.99,
     preview_url: "/static/previews/WB-BND-019_preview.jpg",
@@ -1026,12 +1026,12 @@ var products_default = [
     file_count: 64,
     design_count: 8,
     size_mb: 150,
-    description: "\u2728 TWISTED ALICE IN WONDERLAND TWISTED DARK EVIL MEGA CLIPART BUNDLE (8 DESIGNS / 64 FILES) \u2728\n\nInstantly elevate your print-on-demand shop, sticker collection, and craft projects with the ultimate Twisted Alice In Wonderland Twisted Dark Evil Clipart Bundle! Created in crisp 3072x3072 resolution, every asset comes isolated with a clean transparent background and multi-vector formats.\n\n\u{1F4E6} WHAT IS INCLUDED IN YOUR DOWNLOAD:\n--------------------------------------------------\n\u2714 8 High-Resolution Asset Designs (3072 x 3072 pixels, 300 DPI)\n\u2714 Transparent PNG Files (Crisp isolated backgrounds)\n\u2714 Scalable Vector SVG Files (Fully editable & layered)\n\u2714 Master EPS & DXF Files (For vinyl cutters, Silhouette, Cricut, Laser)\n\u2714 Web-Optimized WEBP & JPG Previews\n\u2714 Print-Ready PDF & TIFF Master Files\n\u2714 Full Commercial Use License Included\n\n\u{1F3A8} PERFECT FOR:\n--------------------------------------------------\n\u2022 Sublimation Tumblers, Mugs, & Apparel (Printify / Printful / Gelato)\n\u2022 Sticker Sheet Crafts & Cricut Cut Projects\n\u2022 Twitch / YouTube Stream Overlays & Banners\n\u2022 Digital Planners, Scrapbooking, & Stationery\n\u2022 Wall Art Prints & Graphic Tee Branding\n\n\u{1F680} INSTANT DELIVERY ACCESS:\nUpon purchase, you will receive an official Delivery PDF containing your high-speed cloud link to instantly access and download your organized ZIP folders.\n",
-    seo_title: "Twisted Alice In Wonderland Twisted Dark Evil Clipart Bundle, 8 PNG & SVG Vectors, Sublimation Graphic PNGs, Commercial Use",
+    description: "\u2728 TWISTED GOTHIC DARK EVIL MEGA CLIPART BUNDLE (8 DESIGNS / 64 FILES) \u2728\n\nInstantly elevate your print-on-demand shop, sticker collection, and craft projects with the ultimate Twisted Gothic Dark Evil Clipart Bundle! Created in crisp 3072x3072 resolution, every asset comes isolated with a clean transparent background and multi-vector formats.\n\n\u{1F4E6} WHAT IS INCLUDED IN YOUR DOWNLOAD:\n--------------------------------------------------\n\u2714 8 High-Resolution Asset Designs (3072 x 3072 pixels, 300 DPI)\n\u2714 Transparent PNG Files (Crisp isolated backgrounds)\n\u2714 Scalable Vector SVG Files (Fully editable & layered)\n\u2714 Master EPS & DXF Files (For vinyl cutters, Silhouette, Cricut, Laser)\n\u2714 Web-Optimized WEBP & JPG Previews\n\u2714 Print-Ready PDF & TIFF Master Files\n\u2714 Full Commercial Use License Included\n\n\u{1F3A8} PERFECT FOR:\n--------------------------------------------------\n\u2022 Sublimation Tumblers, Mugs, & Apparel (Printify / Printful / Gelato)\n\u2022 Sticker Sheet Crafts & Cricut Cut Projects\n\u2022 Twitch / YouTube Stream Overlays & Banners\n\u2022 Digital Planners, Scrapbooking, & Stationery\n\u2022 Wall Art Prints & Graphic Tee Branding\n\n\u{1F680} INSTANT DELIVERY ACCESS:\nUpon purchase, you will receive an official Delivery PDF containing your high-speed cloud link to instantly access and download your organized ZIP folders.\n",
+    seo_title: "Twisted Gothic Dark Evil Clipart Bundle, 8 PNG & SVG Vectors, Sublimation Graphic PNGs, Commercial Use",
     etsy_tags: [
-      "twisted alice in won",
-      "twisted alice in won",
-      "twisted alice in won",
+      "twisted gothic dark",
+      "twisted gothic dark",
+      "twisted gothic dark",
       "twisted bundle",
       "sublimation png",
       "vector graphics",
@@ -1049,9 +1049,9 @@ var products_default = [
   },
   {
     sku: "WB-BND-020",
-    title: "Twisted Alice In Wonderland Twisted Evil Clipart Collection",
-    name: "Twisted Alice In Wonderland Twisted Evil Clipart Mega-Bundle",
-    category: "Twisted Alice In Wonderland Twisted Evil",
+    title: "Twisted Gothic Evil Clipart Collection",
+    name: "Twisted Gothic Evil Clipart Mega-Bundle",
+    category: "Twisted Gothic Evil",
     price: 24.99,
     original_price: 79.99,
     preview_url: "/static/previews/WB-BND-020_preview.jpg",
@@ -1063,12 +1063,12 @@ var products_default = [
     file_count: 1472,
     design_count: 184,
     size_mb: 150,
-    description: "\u2728 TWISTED ALICE IN WONDERLAND TWISTED EVIL MEGA CLIPART BUNDLE (184 DESIGNS / 1472 FILES) \u2728\n\nInstantly elevate your print-on-demand shop, sticker collection, and craft projects with the ultimate Twisted Alice In Wonderland Twisted Evil Clipart Bundle! Created in crisp 3072x3072 resolution, every asset comes isolated with a clean transparent background and multi-vector formats.\n\n\u{1F4E6} WHAT IS INCLUDED IN YOUR DOWNLOAD:\n--------------------------------------------------\n\u2714 184 High-Resolution Asset Designs (3072 x 3072 pixels, 300 DPI)\n\u2714 Transparent PNG Files (Crisp isolated backgrounds)\n\u2714 Scalable Vector SVG Files (Fully editable & layered)\n\u2714 Master EPS & DXF Files (For vinyl cutters, Silhouette, Cricut, Laser)\n\u2714 Web-Optimized WEBP & JPG Previews\n\u2714 Print-Ready PDF & TIFF Master Files\n\u2714 Full Commercial Use License Included\n\n\u{1F3A8} PERFECT FOR:\n--------------------------------------------------\n\u2022 Sublimation Tumblers, Mugs, & Apparel (Printify / Printful / Gelato)\n\u2022 Sticker Sheet Crafts & Cricut Cut Projects\n\u2022 Twitch / YouTube Stream Overlays & Banners\n\u2022 Digital Planners, Scrapbooking, & Stationery\n\u2022 Wall Art Prints & Graphic Tee Branding\n\n\u{1F680} INSTANT DELIVERY ACCESS:\nUpon purchase, you will receive an official Delivery PDF containing your high-speed cloud link to instantly access and download your organized ZIP folders.\n",
-    seo_title: "Twisted Alice In Wonderland Twisted Evil Clipart Bundle, 184 PNG & SVG Vectors, Sublimation Graphic PNGs, Commercial Use",
+    description: "\u2728 TWISTED GOTHIC EVIL MEGA CLIPART BUNDLE (184 DESIGNS / 1472 FILES) \u2728\n\nInstantly elevate your print-on-demand shop, sticker collection, and craft projects with the ultimate Twisted Gothic Evil Clipart Bundle! Created in crisp 3072x3072 resolution, every asset comes isolated with a clean transparent background and multi-vector formats.\n\n\u{1F4E6} WHAT IS INCLUDED IN YOUR DOWNLOAD:\n--------------------------------------------------\n\u2714 184 High-Resolution Asset Designs (3072 x 3072 pixels, 300 DPI)\n\u2714 Transparent PNG Files (Crisp isolated backgrounds)\n\u2714 Scalable Vector SVG Files (Fully editable & layered)\n\u2714 Master EPS & DXF Files (For vinyl cutters, Silhouette, Cricut, Laser)\n\u2714 Web-Optimized WEBP & JPG Previews\n\u2714 Print-Ready PDF & TIFF Master Files\n\u2714 Full Commercial Use License Included\n\n\u{1F3A8} PERFECT FOR:\n--------------------------------------------------\n\u2022 Sublimation Tumblers, Mugs, & Apparel (Printify / Printful / Gelato)\n\u2022 Sticker Sheet Crafts & Cricut Cut Projects\n\u2022 Twitch / YouTube Stream Overlays & Banners\n\u2022 Digital Planners, Scrapbooking, & Stationery\n\u2022 Wall Art Prints & Graphic Tee Branding\n\n\u{1F680} INSTANT DELIVERY ACCESS:\nUpon purchase, you will receive an official Delivery PDF containing your high-speed cloud link to instantly access and download your organized ZIP folders.\n",
+    seo_title: "Twisted Gothic Evil Clipart Bundle, 184 PNG & SVG Vectors, Sublimation Graphic PNGs, Commercial Use",
     etsy_tags: [
-      "twisted alice in won",
-      "twisted alice in won",
-      "twisted alice in won",
+      "twisted gothic evil",
+      "twisted gothic evil",
+      "twisted gothic evil",
       "twisted bundle",
       "sublimation png",
       "vector graphics",
@@ -1086,9 +1086,9 @@ var products_default = [
   },
   {
     sku: "WB-BND-021",
-    title: "Twisted Crazy Red Queen From Alice In Wonderland Clipart Collection",
-    name: "Twisted Crazy Red Queen From Alice In Wonderland Clipart Mega-Bundle",
-    category: "Twisted Crazy Red Queen From Alice In Wonderland",
+    title: "Twisted Crimson Queen Horror Clipart Collection",
+    name: "Twisted Crimson Queen Horror Clipart Mega-Bundle",
+    category: "Twisted Crimson Queen Horror",
     price: 24.99,
     original_price: 79.99,
     preview_url: "/static/previews/WB-BND-021_preview.jpg",
@@ -1100,12 +1100,12 @@ var products_default = [
     file_count: 1600,
     design_count: 200,
     size_mb: 150,
-    description: "\u2728 TWISTED CRAZY RED QUEEN FROM ALICE IN WONDERLAND MEGA CLIPART BUNDLE (200 DESIGNS / 1600 FILES) \u2728\n\nInstantly elevate your print-on-demand shop, sticker collection, and craft projects with the ultimate Twisted Crazy Red Queen From Alice In Wonderland Clipart Bundle! Created in crisp 3072x3072 resolution, every asset comes isolated with a clean transparent background and multi-vector formats.\n\n\u{1F4E6} WHAT IS INCLUDED IN YOUR DOWNLOAD:\n--------------------------------------------------\n\u2714 200 High-Resolution Asset Designs (3072 x 3072 pixels, 300 DPI)\n\u2714 Transparent PNG Files (Crisp isolated backgrounds)\n\u2714 Scalable Vector SVG Files (Fully editable & layered)\n\u2714 Master EPS & DXF Files (For vinyl cutters, Silhouette, Cricut, Laser)\n\u2714 Web-Optimized WEBP & JPG Previews\n\u2714 Print-Ready PDF & TIFF Master Files\n\u2714 Full Commercial Use License Included\n\n\u{1F3A8} PERFECT FOR:\n--------------------------------------------------\n\u2022 Sublimation Tumblers, Mugs, & Apparel (Printify / Printful / Gelato)\n\u2022 Sticker Sheet Crafts & Cricut Cut Projects\n\u2022 Twitch / YouTube Stream Overlays & Banners\n\u2022 Digital Planners, Scrapbooking, & Stationery\n\u2022 Wall Art Prints & Graphic Tee Branding\n\n\u{1F680} INSTANT DELIVERY ACCESS:\nUpon purchase, you will receive an official Delivery PDF containing your high-speed cloud link to instantly access and download your organized ZIP folders.\n",
-    seo_title: "Twisted Crazy Red Queen From Alice In Wonderland Clipart Bundle, 200 PNG & SVG Vectors, Sublimation Graphic PNGs, Commercial Use",
+    description: "\u2728 TWISTED CRIMSON QUEEN HORROR MEGA CLIPART BUNDLE (200 DESIGNS / 1600 FILES) \u2728\n\nInstantly elevate your print-on-demand shop, sticker collection, and craft projects with the ultimate Twisted Crimson Queen Horror Clipart Bundle! Created in crisp 3072x3072 resolution, every asset comes isolated with a clean transparent background and multi-vector formats.\n\n\u{1F4E6} WHAT IS INCLUDED IN YOUR DOWNLOAD:\n--------------------------------------------------\n\u2714 200 High-Resolution Asset Designs (3072 x 3072 pixels, 300 DPI)\n\u2714 Transparent PNG Files (Crisp isolated backgrounds)\n\u2714 Scalable Vector SVG Files (Fully editable & layered)\n\u2714 Master EPS & DXF Files (For vinyl cutters, Silhouette, Cricut, Laser)\n\u2714 Web-Optimized WEBP & JPG Previews\n\u2714 Print-Ready PDF & TIFF Master Files\n\u2714 Full Commercial Use License Included\n\n\u{1F3A8} PERFECT FOR:\n--------------------------------------------------\n\u2022 Sublimation Tumblers, Mugs, & Apparel (Printify / Printful / Gelato)\n\u2022 Sticker Sheet Crafts & Cricut Cut Projects\n\u2022 Twitch / YouTube Stream Overlays & Banners\n\u2022 Digital Planners, Scrapbooking, & Stationery\n\u2022 Wall Art Prints & Graphic Tee Branding\n\n\u{1F680} INSTANT DELIVERY ACCESS:\nUpon purchase, you will receive an official Delivery PDF containing your high-speed cloud link to instantly access and download your organized ZIP folders.\n",
+    seo_title: "Twisted Crimson Queen Horror Clipart Bundle, 200 PNG & SVG Vectors, Sublimation Graphic PNGs, Commercial Use",
     etsy_tags: [
-      "twisted crazy red qu",
-      "twisted crazy red qu",
-      "twisted crazy red qu",
+      "twisted crimson quee",
+      "twisted crimson quee",
+      "twisted crimson quee",
       "twisted bundle",
       "sublimation png",
       "vector graphics",
@@ -1667,6 +1667,78 @@ async function onRequestCatalogue(context) {
 }
 __name(onRequestCatalogue, "onRequestCatalogue");
 __name2(onRequestCatalogue, "onRequestCatalogue");
+/* Preview JPEGs: served R2-FIRST, then by the platform assets binding.
+   The heading text is baked into each pack's preview JPEG, so the owner can
+   swap a preview without another code paste by uploading
+   static/previews/<SKU>_preview.jpg into the SAME private bucket the paid
+   zips live in. Absent from R2, the request falls through to env.ASSETS
+   exactly as before; present in neither place it is a clean 404. This route
+   never 500s at a visitor, with or without the R2 binding. */
+var WV_PREVIEW_TYPES = {
+  ".jpg": "image/jpeg",
+  ".jpeg": "image/jpeg",
+  ".png": "image/png",
+  ".webp": "image/webp",
+  ".gif": "image/gif"
+};
+function wvPreviewRequest(request) {
+  if (request.method !== "GET" && request.method !== "HEAD") return null;
+  const url = new URL(request.url);
+  let file;
+  try {
+    file = decodeURIComponent(url.pathname.replace(/^\/static\/previews\//, ""));
+  } catch (e) {
+    return null;
+  }
+  if (!file || !/^[A-Za-z0-9._-]+$/.test(file)) return null;
+  const dot = file.lastIndexOf(".");
+  if (dot === -1) return null;
+  const contentType = WV_PREVIEW_TYPES[file.slice(dot).toLowerCase()];
+  if (!contentType) return null;
+  return { key: "static/previews/" + file, contentType };
+}
+async function onRequestPreview(context) {
+  const { request, env } = context;
+  const notFound = () => wvJson({ error: "not found" }, 404);
+  try {
+    const preview = wvPreviewRequest(request);
+    if (!preview) return notFound();
+    const bucket = wvPaidBucket(env);
+    if (bucket) {
+      try {
+        const obj = await bucket.get(preview.key);
+        if (obj) {
+          const headers = {
+            "content-type": preview.contentType,
+            "cache-control": "public, max-age=3600",
+            etag: obj.httpEtag
+          };
+          if (request.method === "HEAD") {
+            headers["content-length"] = String(obj.size);
+            return new Response(null, { status: 200, headers });
+          }
+          return new Response(obj.body, { status: 200, headers });
+        }
+      } catch (err) {
+        console.error("Preview R2 lookup failed, falling back to assets:", err);
+      }
+    }
+    if (env.ASSETS) {
+      try {
+        const res = await env.ASSETS.fetch(request);
+        if (res.ok) return res;
+      } catch (err) {
+        console.error("Preview asset fallback failed:", err);
+      }
+    }
+    return notFound();
+  } catch (err) {
+    console.error("Preview route error:", err);
+    return notFound();
+  }
+}
+__name(onRequestPreview, "onRequestPreview");
+__name2(onRequestPreview, "onRequestPreview");
 __name(onRequest2, "onRequest2");
 __name2(onRequest2, "onRequest");
 var routes = [
@@ -1767,8 +1839,23 @@ var routes = [
     method: "GET",
     middlewares: [],
     modules: [onRequestCatalogue]
+  },
+  {
+    routePath: "/static/previews/:file",
+    mountPath: "",
+    method: "GET",
+    middlewares: [],
+    modules: [onRequestPreview]
+  },
+  {
+    routePath: "/static/previews/:file",
+    mountPath: "",
+    method: "HEAD",
+    middlewares: [],
+    modules: [onRequestPreview]
   }
 ];
+
 function lexer(str) {
   var tokens = [];
   var i = 0;

@@ -1,0 +1,11 @@
+# LOCAL TEST ONLY — a deployment with an assets directory but NO R2 binding:
+# previews must still serve from ASSETS (never 500) and unknown previews 404.
+name = "wildbills-vault-assets-no-r2-local"
+main = "../wildbills-vault-worker.js"
+compatibility_date = "2025-01-01"
+[vars]
+TOKEN_TTL_SECONDS = "3600"
+[assets]
+directory = "./fixture/assets"
+binding = "ASSETS"
+run_worker_first = true
