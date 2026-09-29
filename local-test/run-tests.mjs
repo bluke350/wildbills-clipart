@@ -23,8 +23,11 @@
  *     (owner's real binding name; zero dashboard changes needed)
  *   - no-binding configuration fails closed, error names both binding names
  *   - LEADS_ADMIN_KEY resolves from env and overrides the migration fallback
- *   - static previews are served by the platform asset layer; the merged
- *     catch-all cannot shadow a real asset and 404s unknown paths cleanly
+ *   - preview JPEGs served R2-FIRST from the private bucket (owner swaps a
+ *     preview by uploading static/previews/<SKU>_preview.jpg to R2 — no code
+ *     paste): R2 object wins over a same-named asset; absent from R2 the
+ *     asset serves identically; absent from both is a clean 404; with NO R2
+ *     binding previews still serve from ASSETS and never 500
  */
 import crypto from "node:crypto";
 import fs from "node:fs";
@@ -79,6 +82,7 @@ console.log(`Testing merged worker at ${BASE}\n`);
    - :8788 wrangler dev with wrangler.assets.toml (assets directory bound ASSETS)
    - :8789 wrangler dev with wrangler.alt.toml  (R2 bound `wildbills`, LEADS_ADMIN_KEY set)
    - :8790 wrangler dev with wrangler.nobind.toml (NO R2 binding at all)
+   - :8791 wrangler dev with wrangler.assetsonly.toml (ASSETS, NO R2 binding)
    Local R2 state lives in /tmp so nothing is written under /home. */
 const HERE = new URL(".", import.meta.url).pathname;
 const WRANGLER = "node_modules/wrangler/bin/wrangler.js";
@@ -120,6 +124,15 @@ function seedR2(config, persistTo) {
   if (r.status !== 0) throw new Error(`R2 seed failed for ${config}: ${(r.stdout || "") + (r.stderr || "")}`);
   console.log(`  (local R2 seeded for ${config})`);
 }
+function seedPreview(config, persistTo) {
+  const common = { cwd: HERE, encoding: "utf8", env: { ...process.env, CI: "true", WRANGLER_SEND_METRICS: "false" } };
+  const key = "wildbills-vault-bundles-local/static/previews/WB-BND-016_preview.jpg";
+  const path = "fixture/r2-preview/WB-BND-016_preview.jpg";
+  let r = spawnSync(process.execPath, [WRANGLER, "r2", "object", "put", key, "--path", path, "--local", "--config", config, "--persist-to", persistTo], common);
+  if (r.status !== 0) r = spawnSync(process.execPath, [WRANGLER, "r2", "object", "put", key, "--file", path, "--local", "--config", config, "--persist-to", persistTo], common);
+  if (r.status !== 0) throw new Error(`R2 preview seed failed for ${config}: ${(r.stdout || "") + (r.stderr || "")}`);
+  console.log(`  (local R2 preview seeded for ${config})`);
+}
 async function startWorker(port, config, persistTo) {
   const p = startProc([WRANGLER, "dev", "--port", String(port), "--ip", "127.0.0.1", "--config", config, "--persist-to", persistTo], `/tmp/wrangler-${port}.log`);
   await waitReady(`http://127.0.0.1:${port}/products.json`, `wrangler dev :${port} (${config})`);
@@ -130,6 +143,7 @@ async function startWorker(port, config, persistTo) {
 startProc(["mock-stripe.mjs"], "/tmp/mock-stripe.log");
 await waitReady("http://127.0.0.1:9799/v1/checkout/sessions/__probe", "mock-stripe");
 seedR2("wrangler.toml", "/tmp/wv-state-8787");
+seedPreview("wrangler.toml", "/tmp/wv-state-8787");
 const w8787 = await startWorker(8787, "wrangler.toml", "/tmp/wv-state-8787");
 
 /* ---------- 1. no token / legacy public shape ---------- */
@@ -300,6 +314,33 @@ const w8787 = await startWorker(8787, "wrangler.toml", "/tmp/wv-state-8787");
   }
 }
 
+/* ---------- 11b. renamed catalogue: approved names in, franchise names out ---------- */
+{
+  const r = await req("/products.json");
+  const cat = Array.isArray(r.json) ? r.json : [];
+  const bySku = Object.fromEntries(cat.map((p) => [p.sku, p]));
+  const names = {
+    "WB-BND-016": "Haunted Small Town Horror",
+    "WB-BND-017": "Crimson Queen Gothic",
+    "WB-BND-019": "Twisted Gothic Dark Evil",
+    "WB-BND-020": "Twisted Gothic Evil",
+    "WB-BND-021": "Twisted Crimson Queen Horror",
+  };
+  const zips = {
+    "WB-BND-016": "bundle_stranger_things_tv_show.zip",
+    "WB-BND-017": "bundle_the_red_queen_from_alice_in_wonderland.zip",
+    "WB-BND-019": "bundle_twisted_alice_in_wonderland_twisted_dark_evil.zip",
+    "WB-BND-020": "bundle_twisted_alice_in_wonderland_twisted_evil.zip",
+    "WB-BND-021": "bundle_twisted_crazy_red_queen_from_alice_in_wonderland.zip",
+  };
+  for (const [sku, name] of Object.entries(names)) {
+    check(`${sku} renamed -> "${name}"`, bySku[sku]?.name === `${name} Clipart Mega-Bundle` && bySku[sku]?.title === `${name} Clipart Collection` && bySku[sku]?.category === name, bySku[sku]?.name || "(missing)");
+    check(`${sku} zip_filename UNCHANGED (delivery key preserved)`, bySku[sku]?.zip_filename === zips[sku], bySku[sku]?.zip_filename || "(missing)");
+  }
+  check("no franchise names left in the served catalogue", !/stranger things|alice in wonderland|red queen/i.test(r.text), "");
+  check("all 27 products still priced 24.99 / 79.99", cat.length === 27 && cat.every((p) => p.price === 24.99 && p.original_price === 79.99), `${cat.length} products`);
+}
+
 /* ---------- 12. other existing routes ---------- */
 {
   const r = await req("/api/auto-promote");
@@ -343,22 +384,52 @@ const w8787 = await startWorker(8787, "wrangler.toml", "/tmp/wv-state-8787");
   check("malformed body -> 400 (fail closed)", r5.status === 400, `status=${r5.status} ${r5.text.slice(0, 60)}`);
 }
 
+/* ---------- 14b. preview route: R2-FIRST, no ASSETS binding present ---------- */
+{
+  const r2Jpg = fs.readFileSync(new URL("./fixture/r2-preview/WB-BND-016_preview.jpg", import.meta.url));
+  const r = await req("/static/previews/WB-BND-016_preview.jpg");
+  check("preview present in R2 -> 200 even with NO ASSETS binding", r.status === 200, `status=${r.status}`);
+  check("preview content-type image/jpeg", (r.headers["content-type"] || "").includes("image/jpeg"), r.headers["content-type"]);
+  check("preview bytes are the R2 object", r.body.equals(r2Jpg), `${r.body.length}B vs ${r2Jpg.length}B`);
+  check("preview response is cacheable (cache-control public)", (r.headers["cache-control"] || "").includes("public"), r.headers["cache-control"]);
+  const miss = await req("/static/previews/WB-BND-001_preview.jpg");
+  check("preview absent from R2 with NO ASSETS -> clean 404", miss.status === 404, `status=${miss.status}`);
+  const traversal = await req("/static/previews/..%2Fbundle_bass_fishing.zip");
+  check("preview path traversal (..%2F) -> 404, never the zip", traversal.status === 404, `status=${traversal.status}`);
+  const normalized = await req("/static/previews/../../bundle_bass_fishing.zip");
+  check("dot-dot traversal normalized away by URL -> 404", normalized.status === 404, `status=${normalized.status}`);
+  const wrongExt = await req("/static/previews/bundle_bass_fishing.zip");
+  check("non-image extension under previews -> 404 (not a file server)", wrongExt.status === 404, `status=${wrongExt.status}`);
+}
+
 stopProc(w8787);
 
-/* ---------- 15. static previews served by the platform asset layer ---------- */
+/* ---------- 15. preview fallback to ASSETS + R2 wins over a same-named asset ---------- */
 {
-  console.log("\n[phase 2] wrangler.assets.toml on :8788 (assets directory bound as ASSETS)");
+  console.log("\n[phase 2] wrangler.assets.toml on :8788 (assets ASSETS + R2 PAID_BUNDLES, worker-first)");
+  seedPreview("wrangler.assets.toml", "/tmp/wv-state-8788");
   const w8788 = await startWorker(8788, "wrangler.assets.toml", "/tmp/wv-state-8788");
   try {
     const A = "http://127.0.0.1:8788";
     const fixtureJpg = fs.readFileSync(new URL("./fixture/assets/static/previews/WB-BND-001_preview.jpg", import.meta.url));
     const res = await fetch(A + "/static/previews/WB-BND-001_preview.jpg");
     const buf = Buffer.from(await res.arrayBuffer());
-    check("GET /static/previews/WB-BND-001_preview.jpg -> 200 (served, not shadowed)", res.status === 200, `status=${res.status}`);
-    check("preview content-type image/jpeg", (res.headers.get("content-type") || "").includes("image/jpeg"), res.headers.get("content-type") || "");
-    check("preview bytes identical to the asset on disk", buf.equals(fixtureJpg), `${buf.length}B vs ${fixtureJpg.length}B`);
+    check("GET /static/previews/WB-BND-001_preview.jpg -> 200 (R2 miss -> ASSETS fallback)", res.status === 200, `status=${res.status}`);
+    check("fallback preview content-type image/jpeg", (res.headers.get("content-type") || "").includes("image/jpeg"), res.headers.get("content-type") || "");
+    check("fallback preview bytes identical to the asset on disk", buf.equals(fixtureJpg), `${buf.length}B vs ${fixtureJpg.length}B`);
     const miss = await fetch(A + "/static/previews/definitely-not-there.jpg");
-    check("missing asset path -> 404 clean (no 500/1101)", miss.status === 404, `status=${miss.status}`);
+    check("missing preview (absent from R2 AND assets) -> 404 clean (no 500/1101)", miss.status === 404, `status=${miss.status}`);
+
+    const r2Jpg = fs.readFileSync(new URL("./fixture/r2-preview/WB-BND-016_preview.jpg", import.meta.url));
+    const assetsJpg = fs.readFileSync(new URL("./fixture/assets/static/previews/WB-BND-016_preview.jpg", import.meta.url));
+    const w16 = await fetch(A + "/static/previews/WB-BND-016_preview.jpg");
+    const b16 = Buffer.from(await w16.arrayBuffer());
+    check("preview in BOTH R2 and assets -> R2 WINS (200)", w16.status === 200, `status=${w16.status}`);
+    check("R2 preview bytes served, not the asset copy", b16.equals(r2Jpg) && !b16.equals(assetsJpg), `${b16.length}B (R2 ${r2Jpg.length}B / asset ${assetsJpg.length}B)`);
+    check("R2-served preview carries cache-control", (w16.headers.get("cache-control") || "").includes("public"), w16.headers.get("cache-control") || "");
+    const h16 = await fetch(A + "/static/previews/WB-BND-016_preview.jpg", { method: "HEAD" });
+    check("HEAD preview -> 200 with content-length", h16.status === 200 && h16.headers.get("content-length") === String(r2Jpg.length), `status=${h16.status} len=${h16.headers.get("content-length")}`);
+
     const api = await fetch(A + "/api/download", { redirect: "manual" });
     check("API routes still reach the worker with assets bound (-> 400)", api.status === 400, `status=${api.status}`);
     const cat = await fetch(A + "/products.json");
@@ -404,7 +475,29 @@ stopProc(w8787);
     const text = await res.text();
     check("download with NO R2 binding -> 500 fail-closed", res.status === 500, `status=${res.status}`);
     check("misconfiguration error names both bindings", text.includes("PAID_BUNDLES") && text.includes("wildbills"), text.slice(0, 120));
+    const pv = await fetch(C + "/static/previews/WB-BND-016_preview.jpg");
+    check("preview with NO R2 and NO assets -> clean 404, never 500", pv.status === 404, `status=${pv.status}`);
   } finally { stopProc(w8790); }
+}
+
+/* ---------- 19. previews with NO R2 binding: assets still serve, never 500 ---------- */
+{
+  console.log("\n[phase 5] wrangler.assetsonly.toml on :8791 (ASSETS bound, NO R2 binding)");
+  const w8791 = await startWorker(8791, "wrangler.assetsonly.toml", "/tmp/wv-state-8791");
+  try {
+    const D = "http://127.0.0.1:8791";
+    const fixtureJpg = fs.readFileSync(new URL("./fixture/assets/static/previews/WB-BND-001_preview.jpg", import.meta.url));
+    const res = await fetch(D + "/static/previews/WB-BND-001_preview.jpg");
+    const buf = Buffer.from(await res.arrayBuffer());
+    check("preview with NO R2 binding -> 200 from ASSETS", res.status === 200, `status=${res.status}`);
+    check("no-R2 fallback bytes identical to the asset on disk", buf.equals(fixtureJpg), `${buf.length}B vs ${fixtureJpg.length}B`);
+    check("no-R2 fallback content-type image/jpeg", (res.headers.get("content-type") || "").includes("image/jpeg"), res.headers.get("content-type") || "");
+    const miss = await fetch(D + "/static/previews/not-anywhere.jpg");
+    check("preview absent from both (NO R2) -> clean 404", miss.status === 404, `status=${miss.status}`);
+    const dl = await fetch(D + `/api/download/${mint(SKU)}`, { redirect: "manual" });
+    const dlText = await dl.text();
+    check("download with NO R2 binding still fails closed (-> 500, names both bindings)", dl.status === 500 && dlText.includes("PAID_BUNDLES") && dlText.includes("wildbills"), `status=${dl.status}`);
+  } finally { stopProc(w8791); }
 }
 
 console.log(`\n${pass} passed, ${fail} failed`);

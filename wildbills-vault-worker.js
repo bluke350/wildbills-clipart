@@ -1667,6 +1667,78 @@ async function onRequestCatalogue(context) {
 }
 __name(onRequestCatalogue, "onRequestCatalogue");
 __name2(onRequestCatalogue, "onRequestCatalogue");
+/* Preview JPEGs: served R2-FIRST, then by the platform assets binding.
+   The heading text is baked into each pack's preview JPEG, so the owner can
+   swap a preview without another code paste by uploading
+   static/previews/<SKU>_preview.jpg into the SAME private bucket the paid
+   zips live in. Absent from R2, the request falls through to env.ASSETS
+   exactly as before; present in neither place it is a clean 404. This route
+   never 500s at a visitor, with or without the R2 binding. */
+var WV_PREVIEW_TYPES = {
+  ".jpg": "image/jpeg",
+  ".jpeg": "image/jpeg",
+  ".png": "image/png",
+  ".webp": "image/webp",
+  ".gif": "image/gif"
+};
+function wvPreviewRequest(request) {
+  if (request.method !== "GET" && request.method !== "HEAD") return null;
+  const url = new URL(request.url);
+  let file;
+  try {
+    file = decodeURIComponent(url.pathname.replace(/^\/static\/previews\//, ""));
+  } catch (e) {
+    return null;
+  }
+  if (!file || !/^[A-Za-z0-9._-]+$/.test(file)) return null;
+  const dot = file.lastIndexOf(".");
+  if (dot === -1) return null;
+  const contentType = WV_PREVIEW_TYPES[file.slice(dot).toLowerCase()];
+  if (!contentType) return null;
+  return { key: "static/previews/" + file, contentType };
+}
+async function onRequestPreview(context) {
+  const { request, env } = context;
+  const notFound = () => wvJson({ error: "not found" }, 404);
+  try {
+    const preview = wvPreviewRequest(request);
+    if (!preview) return notFound();
+    const bucket = wvPaidBucket(env);
+    if (bucket) {
+      try {
+        const obj = await bucket.get(preview.key);
+        if (obj) {
+          const headers = {
+            "content-type": preview.contentType,
+            "cache-control": "public, max-age=3600",
+            etag: obj.httpEtag
+          };
+          if (request.method === "HEAD") {
+            headers["content-length"] = String(obj.size);
+            return new Response(null, { status: 200, headers });
+          }
+          return new Response(obj.body, { status: 200, headers });
+        }
+      } catch (err) {
+        console.error("Preview R2 lookup failed, falling back to assets:", err);
+      }
+    }
+    if (env.ASSETS) {
+      try {
+        const res = await env.ASSETS.fetch(request);
+        if (res.ok) return res;
+      } catch (err) {
+        console.error("Preview asset fallback failed:", err);
+      }
+    }
+    return notFound();
+  } catch (err) {
+    console.error("Preview route error:", err);
+    return notFound();
+  }
+}
+__name(onRequestPreview, "onRequestPreview");
+__name2(onRequestPreview, "onRequestPreview");
 __name(onRequest2, "onRequest2");
 __name2(onRequest2, "onRequest");
 var routes = [
@@ -1767,8 +1839,23 @@ var routes = [
     method: "GET",
     middlewares: [],
     modules: [onRequestCatalogue]
+  },
+  {
+    routePath: "/static/previews/:file",
+    mountPath: "",
+    method: "GET",
+    middlewares: [],
+    modules: [onRequestPreview]
+  },
+  {
+    routePath: "/static/previews/:file",
+    mountPath: "",
+    method: "HEAD",
+    middlewares: [],
+    modules: [onRequestPreview]
   }
 ];
+
 function lexer(str) {
   var tokens = [];
   var i = 0;

@@ -1,17 +1,17 @@
-# LOCAL TEST ONLY — proves real static previews are served by the platform
-# asset layer and the merged worker's catch-all cannot shadow them.
-# This mirrors a deployment WITH an assets directory bound as ASSETS.
+# LOCAL TEST ONLY — a deployment with an assets directory bound as ASSETS plus
+# the R2 bucket as PAID_BUNDLES. run_worker_first mirrors the production shape
+# (the pasted Worker sees every request first, like the bundled _worker.js),
+# so the preview route's R2-FIRST lookup can be tested against an asset that
+# exists in BOTH places: the R2 object must win.
 name = "wildbills-vault-assets-local"
 main = "../wildbills-vault-worker.js"
 compatibility_date = "2025-01-01"
-
 [vars]
 TOKEN_TTL_SECONDS = "3600"
-
 [[r2_buckets]]
 binding = "PAID_BUNDLES"
 bucket_name = "wildbills-vault-bundles-local"
-
 [assets]
 directory = "./fixture/assets"
 binding = "ASSETS"
+run_worker_first = true
