@@ -1,0 +1,11 @@
+# Local test only — this Worker is normally pasted into the Cloudflare dashboard editor.
+name = "wildbills-vault-merged-local"
+main = "../wildbills-vault-worker.js"
+compatibility_date = "2025-01-01"
+
+[vars]
+TOKEN_TTL_SECONDS = "3600"
+
+[[r2_buckets]]
+binding = "PAID_BUNDLES"
+bucket_name = "wildbills-vault-bundles-local"

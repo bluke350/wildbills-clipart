@@ -12,40 +12,55 @@ async function onRequestPost(context) {
     "Access-Control-Allow-Headers": "Content-Type"
   };
   try {
-    const STRIPE_SECRET = env.STRIPE_SECRET_KEY || "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";
+    const STRIPE_SECRET = env.STRIPE_SECRET_KEY;
     if (!STRIPE_SECRET) {
       return new Response(
         JSON.stringify({ error: "Stripe secret key is missing in environment variables (STRIPE_SECRET_KEY)." }),
         { status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" } }
       );
     }
-    const body = await request.json();
-    const { sku, name, price, product_id, stripe_price_id } = body;
+    const STRIPE_API_BASE = env.STRIPE_API_BASE || "https://api.stripe.com";
+    const body = await request.json().catch(() => ({}));
     const origin = new URL(request.url).origin;
-    const successUrl = `${origin}/success.html?session_id={CHECKOUT_SESSION_ID}&sku=${encodeURIComponent(sku || "")}`;
-    const cancelUrl = `${origin}/product.html?sku=${encodeURIComponent(sku || "")}&canceled=true`;
-    const itemPriceInCents = Math.round((parseFloat(price) || 15) * 100);
-    const itemName = name || (sku ? `Clipart Bundle ${sku}` : "Clipart Bundle");
-    const itemProductId = product_id || sku || "WB-BUNDLE";
+    /* SERVER-SIDE PRICING: the amount charged is resolved from the embedded
+       catalogue by SKU. Client-supplied price/name/stripe_price_id/product_id
+       values are never trusted, so a tampered request body cannot make Stripe
+       charge less than the advertised price. Fail closed on unknown/missing SKU. */
+    const requestedSku = body && body.sku ? String(body.sku).trim() : "";
+    const product = requestedSku ? wvFindProduct(requestedSku) : null;
+    if (!product || typeof product.price !== "number" || !(product.price > 0)) {
+      return new Response(
+        JSON.stringify({ error: "Unknown or missing SKU. Prices are resolved server-side from the catalogue; send a valid product SKU." }),
+        { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+      );
+    }
+    const sku = product.sku;
+    const itemPriceInCents = Math.round(product.price * 100);
+    const itemName = product.name || product.title || `Clipart Bundle ${sku}`;
+    const itemProductId = sku;
+    const successUrl = `${origin}/success.html?session_id={CHECKOUT_SESSION_ID}&sku=${encodeURIComponent(sku)}`;
+    const cancelUrl = `${origin}/product.html?sku=${encodeURIComponent(sku)}&canceled=true`;
     const params = new URLSearchParams();
     params.append("mode", "payment");
     params.append("success_url", successUrl);
     params.append("cancel_url", cancelUrl);
-    if (stripe_price_id) {
-      params.append("line_items[0][price]", stripe_price_id);
+    if (product.stripe_price_id) {
+      // A Stripe Price object may only come from the catalogue entry itself -
+      // never from the client body.
+      params.append("line_items[0][price]", String(product.stripe_price_id));
       params.append("line_items[0][quantity]", "1");
     } else {
       params.append("line_items[0][price_data][currency]", "usd");
       params.append("line_items[0][price_data][product_data][name]", itemName);
       params.append("line_items[0][price_data][product_data][tax_code]", "txcd_10000000");
-      params.append("line_items[0][price_data][product_data][metadata][sku]", sku || "");
+      params.append("line_items[0][price_data][product_data][metadata][sku]", sku);
       params.append("line_items[0][price_data][product_data][metadata][product_id]", itemProductId);
       params.append("line_items[0][price_data][unit_amount]", itemPriceInCents.toString());
       params.append("line_items[0][quantity]", "1");
     }
-    params.append("metadata[sku]", sku || "");
+    params.append("metadata[sku]", sku);
     params.append("metadata[product_id]", itemProductId);
-    const stripeResponse = await fetch("https://api.stripe.com/v1/checkout/sessions", {
+    const stripeResponse = await fetch(`${STRIPE_API_BASE}/v1/checkout/sessions`, {
       method: "POST",
       headers: {
         "Authorization": `Bearer ${STRIPE_SECRET}`,
@@ -141,7 +156,11 @@ async function onRequestGet(context) {
     "Access-Control-Allow-Headers": "Content-Type"
   };
   const adminSecret = url.searchParams.get("key");
-  if (adminSecret !== "wildbill2026") {
+  /* The real key is the LEADS_ADMIN_KEY dashboard secret / env var. The literal
+     below is a MIGRATION FALLBACK ONLY so existing access keeps working until
+     LEADS_ADMIN_KEY is set - once it is configured, delete the literal. */
+  const expectedKey = String(env.LEADS_ADMIN_KEY || "wildbill2026");
+  if (!adminSecret || !wvTimingSafeEqual(String(adminSecret), expectedKey)) {
     return new Response(JSON.stringify({ error: "Unauthorized access" }), { status: 401, headers: corsHeaders });
   }
   if (!env.LEADS_KV) {
@@ -180,26 +199,63 @@ __name(onRequestOptions2, "onRequestOptions2");
 __name2(onRequestOptions2, "onRequestOptions");
 async function onRequestPost3(context) {
   const { request, env } = context;
-  const STRIPE_SECRET = env.STRIPE_SECRET_KEY || "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";
-  if (!STRIPE_SECRET) {
-    return new Response("Missing Stripe Secret Key", { status: 500 });
+  const WEBHOOK_SECRET = env.STRIPE_WEBHOOK_SECRET;
+  if (!WEBHOOK_SECRET) {
+    return new Response(
+      JSON.stringify({ error: "Stripe webhook secret is missing in environment variables (STRIPE_WEBHOOK_SECRET)." }),
+      { status: 500, headers: { "Content-Type": "application/json" } }
+    );
   }
   const payload = await request.text();
-  const sig = request.headers.get("stripe-signature");
+  const sigHeader = request.headers.get("stripe-signature");
+  const okSig = await wvVerifyStripeSignature(payload, sigHeader, WEBHOOK_SECRET);
+  if (!okSig) {
+    return new Response(JSON.stringify({ error: "invalid Stripe signature" }), {
+      status: 400,
+      headers: { "Content-Type": "application/json" }
+    });
+  }
   let event;
   try {
     event = JSON.parse(payload);
   } catch (err) {
-    return new Response(`Webhook Error: ${err.message}`, { status: 400 });
+    return new Response("Webhook Error: bad payload", { status: 400 });
   }
-  if (event.type === "checkout.session.completed") {
-    const session = event.data.object;
+  if (event.type === "checkout.session.completed" || event.type === "checkout.session.async_payment_succeeded") {
+    const session = event.data && event.data.object ? event.data.object : {};
+    if (session.payment_status !== "paid") {
+      console.log(`Checkout session ${session.id || "unknown"} not yet paid (${session.payment_status}); no link minted.`);
+      return new Response(JSON.stringify({ received: true, minted: false, reason: "session not paid" }), {
+        status: 200,
+        headers: { "Content-Type": "application/json" }
+      });
+    }
     const customerEmail = session.customer_details ? session.customer_details.email : session.customer_email;
-    const rawSku = session.client_reference_id || (session.metadata ? session.metadata.sku : "") || "WB-BND-001";
+    const rawSku = (session.client_reference_id || (session.metadata ? session.metadata.sku || session.metadata.product_id : "") || "").toString();
     const sku = rawSku.trim().toUpperCase();
-    const downloadLink = await generateB2DownloadUrl(env, sku);
-    console.log(`Purchase Completed for ${customerEmail} - SKU: ${sku}`);
-    console.log(`Generated Secure B2 Link: ${downloadLink}`);
+    console.log(`Purchase Completed for ${customerEmail || "unknown"} - SKU: ${sku}`);
+    if (env.LEADS_KV) {
+      try {
+        await env.LEADS_KV.put(`purchase:${session.id || Date.now()}`, JSON.stringify({
+          session_id: session.id,
+          sku,
+          email: customerEmail,
+          amount_total: session.amount_total,
+          timestamp: (/* @__PURE__ */ new Date()).toISOString()
+        }));
+      } catch (e) {
+        console.error("Purchase record error:", e);
+      }
+    }
+    let downloadLink = null;
+    if (sku && wvFindProduct(sku) && env.DOWNLOAD_SIGNING_SECRET) {
+      downloadLink = `${new URL(request.url).origin}/api/download/${encodeURIComponent(await wvMintToken(sku, env))}`;
+      console.log(`Generated secure download link: ${downloadLink}`);
+    }
+    return new Response(JSON.stringify({ received: true, minted: !!downloadLink, sku: sku || undefined, download_url: downloadLink }), {
+      status: 200,
+      headers: { "Content-Type": "application/json" }
+    });
   }
   return new Response(JSON.stringify({ received: true }), {
     status: 200,
@@ -208,42 +264,8 @@ async function onRequestPost3(context) {
 }
 __name(onRequestPost3, "onRequestPost3");
 __name2(onRequestPost3, "onRequestPost");
-async function generateB2DownloadUrl(env, sku) {
-  const B2_KEY_ID = env.B2_KEY_ID || "a9b63ec46253";
-  const B2_APP_KEY = env.B2_APPLICATION_KEY || "005874d0868ce23cd1eee9f253996a4c03824280e9";
-  const B2_BUCKET_ID = env.B2_BUCKET_ID || "7a79ab86a36ecc4496e20513";
-  const B2_BUCKET_NAME = env.B2_BUCKET_NAME || "wildbill-vault-zips";
-  if (!B2_KEY_ID || !B2_APP_KEY || !B2_BUCKET_ID) {
-    return `https://wildbill-secure-vault.pages.dev/api/download?sku=${sku}`;
-  }
-  try {
-    const authHeader = "Basic " + btoa(`${B2_KEY_ID}:${B2_APP_KEY}`);
-    const authRes = await fetch("https://api.backblazeb2.com/b2api/v2/b2_authorize_account", {
-      headers: { Authorization: authHeader }
-    });
-    if (!authRes.ok) return `https://wildbill-secure-vault.pages.dev/api/download?sku=${sku}`;
-    const authData = await authRes.json();
-    const tokenRes = await fetch(`${authData.apiUrl}/b2api/v2/b2_get_download_authorization`, {
-      method: "POST",
-      headers: {
-        Authorization: authData.authorizationToken,
-        "Content-Type": "application/json"
-      },
-      body: JSON.stringify({
-        bucketId: B2_BUCKET_ID,
-        validDurationInSeconds: 86400,
-        fileNamePrefix: ""
-      })
-    });
-    if (!tokenRes.ok) return `https://wildbill-secure-vault.pages.dev/api/download?sku=${sku}`;
-    const tokenData = await tokenRes.json();
-    return `${authData.downloadUrl}/file/${B2_BUCKET_NAME}/${sku}.zip?Authorization=${encodeURIComponent(tokenData.authorizationToken)}`;
-  } catch (err) {
-    return `https://wildbill-secure-vault.pages.dev/api/download?sku=${sku}`;
-  }
-}
-__name(generateB2DownloadUrl, "generateB2DownloadUrl");
-__name2(generateB2DownloadUrl, "generateB2DownloadUrl");
+// generateB2DownloadUrl and its hardcoded B2 credentials were removed: delivery now
+// goes through the private R2 binding (PAID_BUNDLES or wildbills) with signed tokens only.
 async function onRequest(context) {
   const BASE_URL = "https://clipart.wildbillsproplans.com";
   const INDEXNOW_KEY = "pixelforge2026indexnowkey";
@@ -335,7 +357,6 @@ var products_default = [
       "/static/previews/WB-BND-001_preview.jpg"
     ],
     zip_filename: "bundle_90s_grunge_nostalgic_punk_zine.zip",
-    zip_path: "/run/media/wildbill/storage/clipart_output/bundle_zips/bundle_90s_grunge_nostalgic_punk_zine.zip",
     file_count: 2872,
     design_count: 359,
     size_mb: 5881.78,
@@ -358,8 +379,6 @@ var products_default = [
     ],
     theme_key: "90s_grunge_nostalgic_punk_zine",
     Gumroad_URL: "https://clipart.wildbillsproplans.com/product/wb-bnd-001",
-    r2_download_url: "https://pub-7245562694f54849aedabce8bc0cc7e6.r2.dev/bundle_90s_grunge_nostalgic_punk_zine.zip",
-    download_url: "https://pub-7245562694f54849aedabce8bc0cc7e6.r2.dev/bundle_90s_grunge_nostalgic_punk_zine.zip",
     curated_designs_count: 30
   },
   {
@@ -375,7 +394,6 @@ var products_default = [
       "/static/previews/WB-BND-002_preview.jpg"
     ],
     zip_filename: "bundle_acid_core_neon_gradients.zip",
-    zip_path: "/run/media/wildbill/storage/clipart_output/bundle_zips/bundle_acid_core_neon_gradients.zip",
     file_count: 80,
     design_count: 10,
     size_mb: 95.93,
@@ -398,8 +416,6 @@ var products_default = [
     ],
     theme_key: "acid_core_neon_gradients",
     Gumroad_URL: "https://clipart.wildbillsproplans.com/product/wb-bnd-002",
-    r2_download_url: "https://pub-7245562694f54849aedabce8bc0cc7e6.r2.dev/bundle_acid_core_neon_gradients.zip",
-    download_url: "https://pub-7245562694f54849aedabce8bc0cc7e6.r2.dev/bundle_acid_core_neon_gradients.zip",
     curated_designs_count: 10
   },
   {
@@ -415,7 +431,6 @@ var products_default = [
       "/static/previews/WB-BND-003_preview.jpg"
     ],
     zip_filename: "bundle_bass_fishing.zip",
-    zip_path: "/run/media/wildbill/storage/clipart_output/bundle_zips/bundle_bass_fishing.zip",
     file_count: 2e3,
     design_count: 250,
     size_mb: 338.69,
@@ -438,8 +453,6 @@ var products_default = [
     ],
     theme_key: "bass_fishing",
     Gumroad_URL: "https://clipart.wildbillsproplans.com/product/wb-bnd-003",
-    r2_download_url: "https://pub-7245562694f54849aedabce8bc0cc7e6.r2.dev/bundle_bass_fishing.zip",
-    download_url: "https://pub-7245562694f54849aedabce8bc0cc7e6.r2.dev/bundle_bass_fishing.zip",
     curated_designs_count: 30
   },
   {
@@ -455,7 +468,6 @@ var products_default = [
       "/static/previews/WB-BND-004_preview.jpg"
     ],
     zip_filename: "bundle_crazy_wild_cyberpunk.zip",
-    zip_path: "/run/media/wildbill/storage/clipart_output/bundle_zips/bundle_crazy_wild_cyberpunk.zip",
     file_count: 1864,
     design_count: 233,
     size_mb: 150,
@@ -478,8 +490,6 @@ var products_default = [
     ],
     theme_key: "crazy_wild_cyberpunk",
     Gumroad_URL: "https://clipart.wildbillsproplans.com/product/wb-bnd-004",
-    r2_download_url: "https://pub-7245562694f54849aedabce8bc0cc7e6.r2.dev/bundle_crazy_wild_cyberpunk.zip",
-    download_url: "https://pub-7245562694f54849aedabce8bc0cc7e6.r2.dev/bundle_crazy_wild_cyberpunk.zip",
     curated_designs_count: 30
   },
   {
@@ -495,7 +505,6 @@ var products_default = [
       "/static/previews/WB-BND-005_preview.jpg"
     ],
     zip_filename: "bundle_creepy_cute_pastel_goth_halloween.zip",
-    zip_path: "/run/media/wildbill/storage/clipart_output/bundle_zips/bundle_creepy_cute_pastel_goth_halloween.zip",
     file_count: 3560,
     design_count: 445,
     size_mb: 150,
@@ -518,8 +527,6 @@ var products_default = [
     ],
     theme_key: "creepy_cute_pastel_goth_halloween",
     Gumroad_URL: "https://clipart.wildbillsproplans.com/product/wb-bnd-005",
-    r2_download_url: "https://pub-7245562694f54849aedabce8bc0cc7e6.r2.dev/bundle_creepy_cute_pastel_goth_halloween.zip",
-    download_url: "https://pub-7245562694f54849aedabce8bc0cc7e6.r2.dev/bundle_creepy_cute_pastel_goth_halloween.zip",
     curated_designs_count: 30
   },
   {
@@ -535,7 +542,6 @@ var products_default = [
       "/static/previews/WB-BND-006_preview.jpg"
     ],
     zip_filename: "bundle_creepy_cute_seasonal_holidays.zip",
-    zip_path: "/run/media/wildbill/storage/clipart_output/bundle_zips/bundle_creepy_cute_seasonal_holidays.zip",
     file_count: 32,
     design_count: 4,
     size_mb: 150,
@@ -558,8 +564,6 @@ var products_default = [
     ],
     theme_key: "creepy_cute_seasonal_holidays",
     Gumroad_URL: "https://clipart.wildbillsproplans.com/product/wb-bnd-006",
-    r2_download_url: "https://pub-7245562694f54849aedabce8bc0cc7e6.r2.dev/bundle_creepy_cute_seasonal_holidays.zip",
-    download_url: "https://pub-7245562694f54849aedabce8bc0cc7e6.r2.dev/bundle_creepy_cute_seasonal_holidays.zip",
     curated_designs_count: 4
   },
   {
@@ -575,7 +579,6 @@ var products_default = [
       "/static/previews/WB-BND-007_preview.jpg"
     ],
     zip_filename: "bundle_cyberpunk_neon_synthwave.zip",
-    zip_path: "/run/media/wildbill/storage/clipart_output/bundle_zips/bundle_cyberpunk_neon_synthwave.zip",
     file_count: 2840,
     design_count: 355,
     size_mb: 150,
@@ -598,8 +601,6 @@ var products_default = [
     ],
     theme_key: "cyberpunk_neon_synthwave",
     Gumroad_URL: "https://clipart.wildbillsproplans.com/product/wb-bnd-007",
-    r2_download_url: "https://pub-7245562694f54849aedabce8bc0cc7e6.r2.dev/bundle_cyberpunk_neon_synthwave.zip",
-    download_url: "https://pub-7245562694f54849aedabce8bc0cc7e6.r2.dev/bundle_cyberpunk_neon_synthwave.zip",
     curated_designs_count: 30
   },
   {
@@ -615,7 +616,6 @@ var products_default = [
       "/static/previews/WB-BND-008_preview.jpg"
     ],
     zip_filename: "bundle_dark_cottagecore_poisonous_botanicals.zip",
-    zip_path: "/run/media/wildbill/storage/clipart_output/bundle_zips/bundle_dark_cottagecore_poisonous_botanicals.zip",
     file_count: 3368,
     design_count: 421,
     size_mb: 150,
@@ -638,8 +638,6 @@ var products_default = [
     ],
     theme_key: "dark_cottagecore_poisonous_botanicals",
     Gumroad_URL: "https://clipart.wildbillsproplans.com/product/wb-bnd-008",
-    r2_download_url: "https://pub-7245562694f54849aedabce8bc0cc7e6.r2.dev/bundle_dark_cottagecore_poisonous_botanicals.zip",
-    download_url: "https://pub-7245562694f54849aedabce8bc0cc7e6.r2.dev/bundle_dark_cottagecore_poisonous_botanicals.zip",
     curated_designs_count: 30
   },
   {
@@ -655,7 +653,6 @@ var products_default = [
       "/static/previews/WB-BND-009_preview.jpg"
     ],
     zip_filename: "bundle_dark_fantasy_d_d_classes.zip",
-    zip_path: "/run/media/wildbill/storage/clipart_output/bundle_zips/bundle_dark_fantasy_d_d_classes.zip",
     file_count: 48,
     design_count: 6,
     size_mb: 150,
@@ -678,8 +675,6 @@ var products_default = [
     ],
     theme_key: "dark_fantasy_d_d_classes",
     Gumroad_URL: "https://clipart.wildbillsproplans.com/product/wb-bnd-009",
-    r2_download_url: "https://pub-7245562694f54849aedabce8bc0cc7e6.r2.dev/bundle_dark_fantasy_d_d_classes.zip",
-    download_url: "https://pub-7245562694f54849aedabce8bc0cc7e6.r2.dev/bundle_dark_fantasy_d_d_classes.zip",
     curated_designs_count: 6
   },
   {
@@ -695,7 +690,6 @@ var products_default = [
       "/static/previews/WB-BND-010_preview.jpg"
     ],
     zip_filename: "bundle_gold_glamour_maximalist_metallics.zip",
-    zip_path: "/run/media/wildbill/storage/clipart_output/bundle_zips/bundle_gold_glamour_maximalist_metallics.zip",
     file_count: 3952,
     design_count: 494,
     size_mb: 150,
@@ -718,8 +712,6 @@ var products_default = [
     ],
     theme_key: "gold_glamour_maximalist_metallics",
     Gumroad_URL: "https://clipart.wildbillsproplans.com/product/wb-bnd-010",
-    r2_download_url: "https://pub-7245562694f54849aedabce8bc0cc7e6.r2.dev/bundle_gold_glamour_maximalist_metallics.zip",
-    download_url: "https://pub-7245562694f54849aedabce8bc0cc7e6.r2.dev/bundle_gold_glamour_maximalist_metallics.zip",
     curated_designs_count: 30
   },
   {
@@ -735,7 +727,6 @@ var products_default = [
       "/static/previews/WB-BND-011_preview.jpg"
     ],
     zip_filename: "bundle_hand_drawn_diy_collage_elements.zip",
-    zip_path: "/run/media/wildbill/storage/clipart_output/bundle_zips/bundle_hand_drawn_diy_collage_elements.zip",
     file_count: 80,
     design_count: 10,
     size_mb: 150,
@@ -758,8 +749,6 @@ var products_default = [
     ],
     theme_key: "hand_drawn_diy_collage_elements",
     Gumroad_URL: "https://clipart.wildbillsproplans.com/product/wb-bnd-011",
-    r2_download_url: "https://pub-7245562694f54849aedabce8bc0cc7e6.r2.dev/bundle_hand_drawn_diy_collage_elements.zip",
-    download_url: "https://pub-7245562694f54849aedabce8bc0cc7e6.r2.dev/bundle_hand_drawn_diy_collage_elements.zip",
     curated_designs_count: 10
   },
   {
@@ -775,7 +764,6 @@ var products_default = [
       "/static/previews/WB-BND-012_preview.jpg"
     ],
     zip_filename: "bundle_highland_cows_floral_boho.zip",
-    zip_path: "/run/media/wildbill/storage/clipart_output/bundle_zips/bundle_highland_cows_floral_boho.zip",
     file_count: 4064,
     design_count: 508,
     size_mb: 150,
@@ -798,8 +786,6 @@ var products_default = [
     ],
     theme_key: "highland_cows_floral_boho",
     Gumroad_URL: "https://clipart.wildbillsproplans.com/product/wb-bnd-012",
-    r2_download_url: "https://pub-7245562694f54849aedabce8bc0cc7e6.r2.dev/bundle_highland_cows_floral_boho.zip",
-    download_url: "https://pub-7245562694f54849aedabce8bc0cc7e6.r2.dev/bundle_highland_cows_floral_boho.zip",
     curated_designs_count: 30
   },
   {
@@ -815,7 +801,6 @@ var products_default = [
       "/static/previews/WB-BND-013_preview.jpg"
     ],
     zip_filename: "bundle_mystical_tarot.zip",
-    zip_path: "/run/media/wildbill/storage/clipart_output/bundle_zips/bundle_mystical_tarot.zip",
     file_count: 40,
     design_count: 5,
     size_mb: 150,
@@ -838,8 +823,6 @@ var products_default = [
     ],
     theme_key: "mystical_tarot",
     Gumroad_URL: "https://clipart.wildbillsproplans.com/product/wb-bnd-013",
-    r2_download_url: "https://pub-7245562694f54849aedabce8bc0cc7e6.r2.dev/bundle_mystical_tarot.zip",
-    download_url: "https://pub-7245562694f54849aedabce8bc0cc7e6.r2.dev/bundle_mystical_tarot.zip",
     curated_designs_count: 5
   },
   {
@@ -855,7 +838,6 @@ var products_default = [
       "/static/previews/WB-BND-014_preview.jpg"
     ],
     zip_filename: "bundle_mystical_tarot_celestial_gold.zip",
-    zip_path: "/run/media/wildbill/storage/clipart_output/bundle_zips/bundle_mystical_tarot_celestial_gold.zip",
     file_count: 4024,
     design_count: 503,
     size_mb: 150,
@@ -878,8 +860,6 @@ var products_default = [
     ],
     theme_key: "mystical_tarot_celestial_gold",
     Gumroad_URL: "https://clipart.wildbillsproplans.com/product/wb-bnd-014",
-    r2_download_url: "https://pub-7245562694f54849aedabce8bc0cc7e6.r2.dev/bundle_mystical_tarot_celestial_gold.zip",
-    download_url: "https://pub-7245562694f54849aedabce8bc0cc7e6.r2.dev/bundle_mystical_tarot_celestial_gold.zip",
     curated_designs_count: 30
   },
   {
@@ -895,7 +875,6 @@ var products_default = [
       "/static/previews/WB-BND-015_preview.jpg"
     ],
     zip_filename: "bundle_retro_tech_glitch_vaporwave.zip",
-    zip_path: "/run/media/wildbill/storage/clipart_output/bundle_zips/bundle_retro_tech_glitch_vaporwave.zip",
     file_count: 2920,
     design_count: 365,
     size_mb: 150,
@@ -918,8 +897,6 @@ var products_default = [
     ],
     theme_key: "retro_tech_glitch_vaporwave",
     Gumroad_URL: "https://clipart.wildbillsproplans.com/product/wb-bnd-015",
-    r2_download_url: "https://pub-7245562694f54849aedabce8bc0cc7e6.r2.dev/bundle_retro_tech_glitch_vaporwave.zip",
-    download_url: "https://pub-7245562694f54849aedabce8bc0cc7e6.r2.dev/bundle_retro_tech_glitch_vaporwave.zip",
     curated_designs_count: 30
   },
   {
@@ -935,7 +912,6 @@ var products_default = [
       "/static/previews/WB-BND-016_preview.jpg"
     ],
     zip_filename: "bundle_stranger_things_tv_show.zip",
-    zip_path: "/run/media/wildbill/storage/clipart_output/bundle_zips/bundle_stranger_things_tv_show.zip",
     file_count: 1800,
     design_count: 225,
     size_mb: 150,
@@ -958,8 +934,6 @@ var products_default = [
     ],
     theme_key: "stranger_things_tv_show",
     Gumroad_URL: "https://clipart.wildbillsproplans.com/product/wb-bnd-016",
-    r2_download_url: "https://pub-7245562694f54849aedabce8bc0cc7e6.r2.dev/bundle_stranger_things_tv_show.zip",
-    download_url: "https://pub-7245562694f54849aedabce8bc0cc7e6.r2.dev/bundle_stranger_things_tv_show.zip",
     curated_designs_count: 30
   },
   {
@@ -975,7 +949,6 @@ var products_default = [
       "/static/previews/WB-BND-017_preview.jpg"
     ],
     zip_filename: "bundle_the_red_queen_from_alice_in_wonderland.zip",
-    zip_path: "/run/media/wildbill/storage/clipart_output/bundle_zips/bundle_the_red_queen_from_alice_in_wonderland.zip",
     file_count: 488,
     design_count: 61,
     size_mb: 150,
@@ -998,8 +971,6 @@ var products_default = [
     ],
     theme_key: "the_red_queen_from_alice_in_wonderland",
     Gumroad_URL: "https://clipart.wildbillsproplans.com/product/wb-bnd-017",
-    r2_download_url: "https://pub-7245562694f54849aedabce8bc0cc7e6.r2.dev/bundle_the_red_queen_from_alice_in_wonderland.zip",
-    download_url: "https://pub-7245562694f54849aedabce8bc0cc7e6.r2.dev/bundle_the_red_queen_from_alice_in_wonderland.zip",
     curated_designs_count: 30
   },
   {
@@ -1015,7 +986,6 @@ var products_default = [
       "/static/previews/WB-BND-018_preview.jpg"
     ],
     zip_filename: "bundle_trinket_sticker_collector_icons.zip",
-    zip_path: "/run/media/wildbill/storage/clipart_output/bundle_zips/bundle_trinket_sticker_collector_icons.zip",
     file_count: 16,
     design_count: 2,
     size_mb: 150,
@@ -1038,8 +1008,6 @@ var products_default = [
     ],
     theme_key: "trinket_sticker_collector_icons",
     Gumroad_URL: "https://clipart.wildbillsproplans.com/product/wb-bnd-018",
-    r2_download_url: "https://pub-7245562694f54849aedabce8bc0cc7e6.r2.dev/bundle_trinket_sticker_collector_icons.zip",
-    download_url: "https://pub-7245562694f54849aedabce8bc0cc7e6.r2.dev/bundle_trinket_sticker_collector_icons.zip",
     curated_designs_count: 2
   },
   {
@@ -1055,7 +1023,6 @@ var products_default = [
       "/static/previews/WB-BND-019_preview.jpg"
     ],
     zip_filename: "bundle_twisted_alice_in_wonderland_twisted_dark_evil.zip",
-    zip_path: "/run/media/wildbill/storage/clipart_output/bundle_zips/bundle_twisted_alice_in_wonderland_twisted_dark_evil.zip",
     file_count: 64,
     design_count: 8,
     size_mb: 150,
@@ -1078,8 +1045,6 @@ var products_default = [
     ],
     theme_key: "twisted_alice_in_wonderland_twisted_dark_evil",
     Gumroad_URL: "https://clipart.wildbillsproplans.com/product/wb-bnd-019",
-    r2_download_url: "https://pub-7245562694f54849aedabce8bc0cc7e6.r2.dev/bundle_twisted_alice_in_wonderland_twisted_dark_evil.zip",
-    download_url: "https://pub-7245562694f54849aedabce8bc0cc7e6.r2.dev/bundle_twisted_alice_in_wonderland_twisted_dark_evil.zip",
     curated_designs_count: 8
   },
   {
@@ -1095,7 +1060,6 @@ var products_default = [
       "/static/previews/WB-BND-020_preview.jpg"
     ],
     zip_filename: "bundle_twisted_alice_in_wonderland_twisted_evil.zip",
-    zip_path: "/run/media/wildbill/storage/clipart_output/bundle_zips/bundle_twisted_alice_in_wonderland_twisted_evil.zip",
     file_count: 1472,
     design_count: 184,
     size_mb: 150,
@@ -1118,8 +1082,6 @@ var products_default = [
     ],
     theme_key: "twisted_alice_in_wonderland_twisted_evil",
     Gumroad_URL: "https://clipart.wildbillsproplans.com/product/wb-bnd-020",
-    r2_download_url: "https://pub-7245562694f54849aedabce8bc0cc7e6.r2.dev/bundle_twisted_alice_in_wonderland_twisted_evil.zip",
-    download_url: "https://pub-7245562694f54849aedabce8bc0cc7e6.r2.dev/bundle_twisted_alice_in_wonderland_twisted_evil.zip",
     curated_designs_count: 30
   },
   {
@@ -1135,7 +1097,6 @@ var products_default = [
       "/static/previews/WB-BND-021_preview.jpg"
     ],
     zip_filename: "bundle_twisted_crazy_red_queen_from_alice_in_wonderland.zip",
-    zip_path: "/run/media/wildbill/storage/clipart_output/bundle_zips/bundle_twisted_crazy_red_queen_from_alice_in_wonderland.zip",
     file_count: 1600,
     design_count: 200,
     size_mb: 150,
@@ -1158,8 +1119,6 @@ var products_default = [
     ],
     theme_key: "twisted_crazy_red_queen_from_alice_in_wonderland",
     Gumroad_URL: "https://clipart.wildbillsproplans.com/product/wb-bnd-021",
-    r2_download_url: "https://pub-7245562694f54849aedabce8bc0cc7e6.r2.dev/bundle_twisted_crazy_red_queen_from_alice_in_wonderland.zip",
-    download_url: "https://pub-7245562694f54849aedabce8bc0cc7e6.r2.dev/bundle_twisted_crazy_red_queen_from_alice_in_wonderland.zip",
     curated_designs_count: 30
   },
   {
@@ -1175,7 +1134,6 @@ var products_default = [
       "/static/previews/WB-BND-022_preview.jpg"
     ],
     zip_filename: "bundle_vintage_circus_whimsical_carnival.zip",
-    zip_path: "/run/media/wildbill/storage/clipart_output/bundle_zips/bundle_vintage_circus_whimsical_carnival.zip",
     file_count: 16,
     design_count: 2,
     size_mb: 150,
@@ -1198,8 +1156,6 @@ var products_default = [
     ],
     theme_key: "vintage_circus_whimsical_carnival",
     Gumroad_URL: "https://clipart.wildbillsproplans.com/product/wb-bnd-022",
-    r2_download_url: "https://pub-7245562694f54849aedabce8bc0cc7e6.r2.dev/bundle_vintage_circus_whimsical_carnival.zip",
-    download_url: "https://pub-7245562694f54849aedabce8bc0cc7e6.r2.dev/bundle_vintage_circus_whimsical_carnival.zip",
     curated_designs_count: 2
   },
   {
@@ -1215,7 +1171,6 @@ var products_default = [
       "/static/previews/WB-BND-023_preview.jpg"
     ],
     zip_filename: "bundle_vintage_trout_rustic_wildlife.zip",
-    zip_path: "/run/media/wildbill/storage/clipart_output/bundle_zips/bundle_vintage_trout_rustic_wildlife.zip",
     file_count: 2808,
     design_count: 351,
     size_mb: 150,
@@ -1238,8 +1193,6 @@ var products_default = [
     ],
     theme_key: "vintage_trout_rustic_wildlife",
     Gumroad_URL: "https://clipart.wildbillsproplans.com/product/wb-bnd-023",
-    r2_download_url: "https://pub-7245562694f54849aedabce8bc0cc7e6.r2.dev/bundle_vintage_trout_rustic_wildlife.zip",
-    download_url: "https://pub-7245562694f54849aedabce8bc0cc7e6.r2.dev/bundle_vintage_trout_rustic_wildlife.zip",
     curated_designs_count: 30
   },
   {
@@ -1255,7 +1208,6 @@ var products_default = [
       "/static/previews/WB-BND-024_preview.jpg"
     ],
     zip_filename: "bundle_western_gothic.zip",
-    zip_path: "/run/media/wildbill/storage/clipart_output/bundle_zips/bundle_western_gothic.zip",
     file_count: 48,
     design_count: 6,
     size_mb: 150,
@@ -1278,8 +1230,6 @@ var products_default = [
     ],
     theme_key: "western_gothic",
     Gumroad_URL: "https://clipart.wildbillsproplans.com/product/wb-bnd-024",
-    r2_download_url: "https://pub-7245562694f54849aedabce8bc0cc7e6.r2.dev/bundle_western_gothic.zip",
-    download_url: "https://pub-7245562694f54849aedabce8bc0cc7e6.r2.dev/bundle_western_gothic.zip",
     curated_designs_count: 6
   },
   {
@@ -1295,7 +1245,6 @@ var products_default = [
       "/static/previews/WB-BND-025_preview.jpg"
     ],
     zip_filename: "bundle_western_gothic_outlaw_skulls.zip",
-    zip_path: "/run/media/wildbill/storage/clipart_output/bundle_zips/bundle_western_gothic_outlaw_skulls.zip",
     file_count: 3304,
     design_count: 413,
     size_mb: 150,
@@ -1318,8 +1267,6 @@ var products_default = [
     ],
     theme_key: "western_gothic_outlaw_skulls",
     Gumroad_URL: "https://clipart.wildbillsproplans.com/product/wb-bnd-025",
-    r2_download_url: "https://pub-7245562694f54849aedabce8bc0cc7e6.r2.dev/bundle_western_gothic_outlaw_skulls.zip",
-    download_url: "https://pub-7245562694f54849aedabce8bc0cc7e6.r2.dev/bundle_western_gothic_outlaw_skulls.zip",
     curated_designs_count: 30
   },
   {
@@ -1335,7 +1282,6 @@ var products_default = [
       "/static/previews/WB-BND-026_preview.jpg"
     ],
     zip_filename: "bundle_wilderkind_soft_cottage_animal_outfits.zip",
-    zip_path: "/run/media/wildbill/storage/clipart_output/bundle_zips/bundle_wilderkind_soft_cottage_animal_outfits.zip",
     file_count: 96,
     design_count: 12,
     size_mb: 150,
@@ -1358,8 +1304,6 @@ var products_default = [
     ],
     theme_key: "wilderkind_soft_cottage_animal_outfits",
     Gumroad_URL: "https://clipart.wildbillsproplans.com/product/wb-bnd-026",
-    r2_download_url: "https://pub-7245562694f54849aedabce8bc0cc7e6.r2.dev/bundle_wilderkind_soft_cottage_animal_outfits.zip",
-    download_url: "https://pub-7245562694f54849aedabce8bc0cc7e6.r2.dev/bundle_wilderkind_soft_cottage_animal_outfits.zip",
     curated_designs_count: 12
   },
   {
@@ -1375,7 +1319,6 @@ var products_default = [
       "/static/previews/WB-BND-027_preview.jpg"
     ],
     zip_filename: "bundle_wilderkind_soft_cottage_animal_outfits_twitch_panel_icons_test.zip",
-    zip_path: "/run/media/wildbill/storage/clipart_output/bundle_zips/bundle_wilderkind_soft_cottage_animal_outfits_twitch_panel_icons_test.zip",
     file_count: 8,
     design_count: 1,
     size_mb: 150,
@@ -1398,81 +1341,332 @@ var products_default = [
     ],
     theme_key: "wilderkind_soft_cottage_animal_outfits_twitch_panel_icons_test",
     Gumroad_URL: "https://clipart.wildbillsproplans.com/product/wb-bnd-027",
-    r2_download_url: "https://pub-7245562694f54849aedabce8bc0cc7e6.r2.dev/bundle_wilderkind_soft_cottage_animal_outfits_twitch_panel_icons_test.zip",
-    download_url: "https://pub-7245562694f54849aedabce8bc0cc7e6.r2.dev/bundle_wilderkind_soft_cottage_animal_outfits_twitch_panel_icons_test.zip",
     curated_designs_count: 1
   }
 ];
+/* =====================================================================
+   GATED DELIVERY (merged from the tested vault-fix design)
+   Paid files leave storage ONLY through the PRIVATE R2 binding
+   PAID_BUNDLES, and only with a valid, short-lived, single-object
+   signed token minted after Stripe confirms payment. No redirects to
+   any public bucket URL, ever.
+   ===================================================================== */
+const WV_JSON_HEADERS = {
+  "content-type": "application/json; charset=utf-8",
+  "access-control-allow-origin": "*",
+  "access-control-allow-headers": "Content-Type",
+  "access-control-allow-methods": "GET, POST, OPTIONS"
+};
+const wvJson = (body, status = 200, extra = {}) => new Response(JSON.stringify(body), { status, headers: { ...WV_JSON_HEADERS, ...extra } });
+const WV_ENC = new TextEncoder();
+function wvB64urlFromBuf(buf) {
+  let s = "";
+  const b = new Uint8Array(buf);
+  for (let i = 0; i < b.length; i++) s += String.fromCharCode(b[i]);
+  return btoa(s).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
+}
+async function wvHmacSign(secret, msg) {
+  const key = await crypto.subtle.importKey("raw", WV_ENC.encode(secret), { name: "HMAC", hash: "SHA-256" }, false, ["sign"]);
+  return wvB64urlFromBuf(await crypto.subtle.sign("HMAC", key, WV_ENC.encode(msg)));
+}
+function wvTimingSafeEqual(a, b) {
+  if (a.length !== b.length) return false;
+  let diff = 0;
+  for (let i = 0; i < a.length; i++) diff |= a.charCodeAt(i) ^ b.charCodeAt(i);
+  return diff === 0;
+}
+function wvFindProduct(term) {
+  const t = String(term || "").trim().toLowerCase();
+  if (!t) return null;
+  return products_default.find(
+    (p) => p.sku && p.sku.toLowerCase() === t || p.zip_filename && p.zip_filename.toLowerCase() === t || p.theme_key && p.theme_key.toLowerCase() === t || p.zip_filename && p.zip_filename.toLowerCase() === `bundle_${t}.zip`
+  ) || null;
+}
+/* Signed token: v1.<exp-unix-seconds>.<sku>.<nonce>.<hmac-sha256(secret, "v1|exp|sku|nonce")>
+   The signature covers SKU + expiry, so a token is single-object-scoped (SKU maps
+   through the catalogue to exactly one object key) and dies at its expiry. */
+async function wvMintToken(sku, env) {
+  const secret = env.DOWNLOAD_SIGNING_SECRET;
+  if (!secret) throw new Error("DOWNLOAD_SIGNING_SECRET not set");
+  const ttl = Number(env.TOKEN_TTL_SECONDS || 3600);
+  const exp = Math.floor(Date.now() / 1000) + ttl;
+  const nonce = wvB64urlFromBuf(crypto.getRandomValues(new Uint8Array(8)));
+  const sig = await wvHmacSign(secret, `v1|${exp}|${sku}|${nonce}`);
+  return `v1.${exp}.${sku}.${nonce}.${sig}`;
+}
+async function wvVerifyToken(token, env) {
+  const secret = env.DOWNLOAD_SIGNING_SECRET;
+  if (!secret) return { ok: false, status: 500, error: "server misconfigured: DOWNLOAD_SIGNING_SECRET missing" };
+  const parts = String(token || "").split(".");
+  if (parts.length !== 5 || parts[0] !== "v1") {
+    return { ok: false, status: 403, error: "invalid download token" };
+  }
+  const [, expStr, sku, nonce, sig] = parts;
+  const exp = Number(expStr);
+  if (!Number.isInteger(exp) || !sku || !nonce || !sig) {
+    return { ok: false, status: 403, error: "invalid download token" };
+  }
+  const expected = await wvHmacSign(secret, `v1|${exp}|${sku}|${nonce}`);
+  if (!wvTimingSafeEqual(expected, sig)) {
+    return { ok: false, status: 403, error: "invalid download token" };
+  }
+  if (exp < Math.floor(Date.now() / 1000)) {
+    return { ok: false, status: 403, error: "download link expired", sku };
+  }
+  const product = wvFindProduct(sku);
+  if (!product || !product.zip_filename) {
+    return { ok: false, status: 403, error: "unknown product SKU", sku };
+  }
+  return { ok: true, sku: product.sku, objectKey: product.zip_filename, exp };
+}
+/* Stripe webhook signature: HMAC-SHA256 over "t=.payload", +/-300 s tolerance.
+   whsec_ secrets are base64 of the real key - decode before hashing. */
+async function wvStripeSignHex(keySource, msg) {
+  const s = String(keySource);
+  let keyBytes;
+  if (s.startsWith("whsec_")) {
+    const b64 = s.slice("whsec_".length).replace(/-/g, "+").replace(/_/g, "/");
+    keyBytes = Uint8Array.from(atob(b64), (c) => c.charCodeAt(0));
+  } else {
+    keyBytes = WV_ENC.encode(s);
+  }
+  const key = await crypto.subtle.importKey("raw", keyBytes, { name: "HMAC", hash: "SHA-256" }, false, ["sign"]);
+  const sig = new Uint8Array(await crypto.subtle.sign("HMAC", key, WV_ENC.encode(msg)));
+  return Array.from(sig).map((b) => b.toString(16).padStart(2, "0")).join("");
+}
+async function wvVerifyStripeSignature(payload, sigHeader, secret, toleranceSeconds = 300) {
+  if (!sigHeader || !secret) return false;
+  let t = null;
+  const v1s = [];
+  for (const piece of sigHeader.split(",")) {
+    const [k, v] = piece.split("=", 2).map((x) => (x || "").trim());
+    if (k === "t") t = v;
+    else if (k === "v1") v1s.push(v);
+  }
+  if (!t || v1s.length === 0) return false;
+  const age = Math.abs(Math.floor(Date.now() / 1000) - Number(t));
+  if (!Number.isFinite(age) || age > toleranceSeconds) return false;
+  const expected = await wvStripeSignHex(secret, `${t}.${payload}`);
+  return v1s.some((v1) => wvTimingSafeEqual(expected, v1));
+}
+function wvParseRange(header, size) {
+  if (!header) return null;
+  const m = /^bytes=(\d*)-(\d*)$/.exec(header.trim());
+  if (!m) return null;
+  let [, a, b] = m;
+  if (a === "" && b === "") return null;
+  if (a === "") {
+    const n = Number(b);
+    if (!Number.isInteger(n) || n <= 0) return null;
+    return { offset: Math.max(0, size - n), length: Math.min(n, size) };
+  }
+  const start = Number(a);
+  if (!Number.isInteger(start) || start >= size) return "invalid";
+  const end = b === "" ? size - 1 : Math.min(Number(b), size - 1);
+  if (!Number.isInteger(end) || end < start) return "invalid";
+  return { offset: start, length: end - start + 1 };
+}
+/* The paid zips live in ONE bucket that may be bound under either name:
+   PAID_BUNDLES (this repo's docs) or wildbills (the owner's existing binding).
+   Resolve it once here; the bucket is the same either way, so object keys are
+   unchanged and the owner never has to add a second R2 binding in the dashboard. */
+function wvPaidBucket(env) {
+  return env.PAID_BUNDLES || env.wildbills || null;
+}
+/* Gated download: /api/download?token=... and /api/download/<token>.
+   The legacy public shape (?sku=/&file=) is rejected loudly - no redirect,
+   no public bucket URL, ever. Streams from the PRIVATE R2 binding. */
 async function onRequest2(context) {
   const { request, env } = context;
   const url = new URL(request.url);
-  const rawSku = url.searchParams.get("sku") || url.searchParams.get("file") || "";
-  const queryTerm = rawSku.trim();
-  if (!queryTerm) {
-    return new Response(JSON.stringify({ error: "Missing product SKU or file parameter" }), {
-      status: 400,
-      headers: { "Content-Type": "application/json" }
-    });
-  }
-  const R2_PUBLIC_BASE_URL = "https://pub-7245562694f54849aedabce8bc0cc7e6.r2.dev";
-  const termLower = queryTerm.toLowerCase();
-  const product = products_default.find(
-    (p) => p.sku && p.sku.toLowerCase() === termLower || p.zip_filename && p.zip_filename.toLowerCase() === termLower || p.theme_key && p.theme_key.toLowerCase() === termLower || p.zip_filename && p.zip_filename.toLowerCase() === `bundle_${termLower}.zip`
-  );
-  let targetZipName = "";
-  if (product && product.zip_filename) {
-    targetZipName = product.zip_filename;
-  } else if (queryTerm.endsWith(".zip")) {
-    targetZipName = queryTerm;
-  } else if (queryTerm.startsWith("bundle_")) {
-    targetZipName = `${queryTerm}.zip`;
-  } else {
-    targetZipName = `bundle_${queryTerm.toLowerCase()}.zip`;
-  }
-  const r2Url = `${R2_PUBLIC_BASE_URL}/${targetZipName}`;
   try {
-    const headRes = await fetch(r2Url, { method: "HEAD" });
-    if (headRes.ok) {
-      return Response.redirect(r2Url, 302);
+    const bucket = wvPaidBucket(env);
+    if (!bucket) {
+      return wvJson({ error: "server misconfigured: no R2 binding for paid bundles (expected PAID_BUNDLES or wildbills)" }, 500);
     }
+    const token = context.params && context.params.token ? decodeURIComponent(context.params.token) : url.searchParams.get("token");
+    if (!token) {
+      const legacy = url.searchParams.get("sku") || url.searchParams.get("file");
+      if (legacy) {
+        return wvJson({ error: "downloads require a signed, expiring token issued after payment" }, 401, { "www-authenticate": "WBV1 signed-token" });
+      }
+      return wvJson({ error: "missing download token" }, 400);
+    }
+    const v = await wvVerifyToken(token, env);
+    if (!v.ok) return wvJson({ error: v.error, sku: v.sku }, v.status);
+    const meta = await bucket.head(v.objectKey);
+    if (!meta) return wvJson({ error: "bundle file not found in storage", sku: v.sku }, 404);
+    const headers = {
+      "content-type": "application/zip",
+      "content-disposition": `attachment; filename="${v.objectKey}"`,
+      "accept-ranges": "bytes",
+      "cache-control": "private, no-store",
+      "etag": meta.etag ? `"${meta.etag}"` : `"${v.sku}-${meta.size}"`,
+      "x-download-expiry": String(v.exp)
+    };
+    const range = wvParseRange(request.headers.get("range"), meta.size);
+    if (range === "invalid") {
+      return new Response(JSON.stringify({ error: "requested range not satisfiable" }), {
+        status: 416,
+        headers: { ...WV_JSON_HEADERS, "content-range": `bytes */${meta.size}` }
+      });
+    }
+    if (range) {
+      const obj = await bucket.get(v.objectKey, { range: { offset: range.offset, length: range.length } });
+      if (!obj) return wvJson({ error: "bundle file not found in storage", sku: v.sku }, 404);
+      return new Response(obj.body, {
+        status: 206,
+        headers: {
+          ...headers,
+          "content-range": `bytes ${range.offset}-${range.offset + range.length - 1}/${meta.size}`,
+          "content-length": String(range.length)
+        }
+      });
+    }
+    const obj = await bucket.get(v.objectKey);
+    if (!obj) return wvJson({ error: "bundle file not found in storage", sku: v.sku }, 404);
+    return new Response(obj.body, { status: 200, headers: { ...headers, "content-length": String(meta.size) } });
   } catch (err) {
-    console.error("R2 head check error:", err);
+    console.error("Download error:", err);
+    return wvJson({ error: "internal error" }, 500);
   }
-  if (product && product.download_url) {
-    return Response.redirect(product.download_url, 302);
+}
+__name(onRequest2, "onRequest2");
+__name2(onRequest2, "onRequest");
+/* Success-path issuance: verifies the Stripe checkout session SERVER-SIDE
+   (payment_status === "paid") before minting a download token. */
+async function onRequestDownloadLink(context) {
+  const { request, env } = context;
+  const url = new URL(request.url);
+  try {
+    const sessionId = url.searchParams.get("session_id");
+    const skuHint = (url.searchParams.get("sku") || "").trim().toUpperCase();
+    if (!sessionId) return wvJson({ error: "missing session_id" }, 400);
+    const STRIPE_SECRET = env.STRIPE_SECRET_KEY;
+    if (!STRIPE_SECRET) {
+      return wvJson({ error: "Stripe secret key is missing in environment variables (STRIPE_SECRET_KEY)." }, 500);
+    }
+    const STRIPE_API_BASE = env.STRIPE_API_BASE || "https://api.stripe.com";
+    const res = await fetch(`${STRIPE_API_BASE}/v1/checkout/sessions/${encodeURIComponent(sessionId)}`, {
+      headers: { "Authorization": `Bearer ${STRIPE_SECRET}` }
+    });
+    if (!res.ok) return wvJson({ error: "could not verify checkout session with Stripe" }, 502);
+    const session = await res.json();
+    if (!session || session.payment_status !== "paid") return wvJson({ error: "payment not completed" }, 402);
+    const skuRaw = (session.metadata && (session.metadata.sku || session.metadata.product_id)) || session.client_reference_id || "";
+    const product = wvFindProduct(String(skuRaw));
+    if (!product) return wvJson({ error: "unknown or missing SKU on session" }, 403);
+    if (skuHint && skuHint !== product.sku.toUpperCase()) return wvJson({ error: "SKU does not match the paid session" }, 403);
+    const token = await wvMintToken(product.sku, env);
+    return wvJson({
+      sku: product.sku,
+      download_url: `${url.origin}/api/download/${encodeURIComponent(token)}`,
+      expires_in: Number(env.TOKEN_TTL_SECONDS || 3600)
+    });
+  } catch (err) {
+    console.error("Download link error:", err);
+    return wvJson({ error: "internal error" }, 500);
   }
-  const htmlResponse = `<!DOCTYPE html>
+}
+__name(onRequestDownloadLink, "onRequestDownloadLink");
+__name2(onRequestDownloadLink, "onRequestDownloadLink");
+/* Success page (replaces the static success.html asset's own delivery logic):
+   the buyer's download link is minted server-side by /api/download-link,
+   after Stripe confirms the session is paid. */
+async function onRequestSuccess(context) {
+  const html = `<!DOCTYPE html>
 <html lang="en">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Bundle Synchronizing - Wild Bill Clipart Vault</title>
+    <title>Thank You for Your Order - Wild Bill Vault</title>
     <style>
         body { background: #0c0808; color: #f5f2f2; font-family: Arial, sans-serif; display: flex; align-items: center; justify-content: center; min-height: 100vh; margin: 0; padding: 20px; text-align: center; }
         .card { background: #151010; border: 1px solid #2a1d1d; border-radius: 16px; padding: 40px 30px; max-width: 500px; width: 100%; box-shadow: 0 16px 40px rgba(0,0,0,0.5); }
-        .icon { font-size: 48px; margin-bottom: 16px; }
         h1 { margin: 0 0 12px; font-size: 22px; color: #f5f2f2; }
-        p { color: #b3a5a5; font-size: 14px; line-height: 1.6; margin-bottom: 24px; }
-        .btn { display: inline-block; background: #ef4a3b; color: #fff; padding: 12px 24px; border-radius: 8px; text-decoration: none; font-weight: bold; font-size: 14px; cursor: pointer; border: none; }
-        .btn:hover { background: #d63b2d; }
-        .subtext { font-size: 12px; color: #736767; margin-top: 16px; }
+        p { color: #b3a5a5; font-size: 14px; line-height: 1.6; }
+        .btn { display: inline-block; background: #16a34a; color: #fff; padding: 14px 24px; border-radius: 8px; font-weight: bold; text-decoration: none; font-size: 15px; margin-top: 14px; }
+        .btn:hover { background: #128a3e; }
     </style>
 </head>
 <body>
     <div class="card">
-        <div class="icon">\u{1F4E6}</div>
-        <h1>Bundle Vault Delivery</h1>
-        <p>Your download link for bundle <strong>${queryTerm}</strong> is being prepared. If you just completed your order, please click below to download your ZIP asset package.</p>
-        <a href="${r2Url}" class="btn">\u26A1 Download ZIP Asset Bundle</a>
-        <div class="subtext">Order Reference: ${queryTerm}</div>
+        <div style="font-size: 44px;">\u{1F4E6}</div>
+        <h1>Thank You for Your Order</h1>
+        <p id="status">Confirming your payment...</p>
+        <div id="dl"></div>
     </div>
+    <script>
+    (async () => {
+      const qs = new URLSearchParams(location.search);
+      const sid = qs.get("session_id");
+      const sku = qs.get("sku") || "";
+      const status = document.getElementById("status");
+      if (!sid) { status.textContent = "Missing order reference. Check your email for your download link."; return; }
+      try {
+        const r = await fetch("/api/download-link?session_id=" + encodeURIComponent(sid) + "&sku=" + encodeURIComponent(sku));
+        const data = await r.json();
+        if (r.ok && data.download_url) {
+          status.textContent = "Payment confirmed for " + (data.sku || sku) + ". Your secure link is valid for " + Math.round((data.expires_in || 3600) / 60) + " minutes.";
+          const a = document.createElement("a");
+          a.className = "btn";
+          a.href = data.download_url;
+          a.textContent = "\\u2B07 Download your bundle (.zip)";
+          document.getElementById("dl").appendChild(a);
+        } else {
+          status.textContent = (data && data.error) || "We could not verify your order. Check your email for your download link.";
+        }
+      } catch (e) {
+        status.textContent = "We could not verify your order. Check your email for your download link.";
+      }
+    })();
+    </script>
 </body>
 </html>`;
-  return new Response(htmlResponse, {
-    status: 200,
-    headers: { "Content-Type": "text/html; charset=utf-8" }
-  });
+  return new Response(html, { headers: { "content-type": "text/html; charset=utf-8" } });
 }
+__name(onRequestSuccess, "onRequestSuccess");
+__name2(onRequestSuccess, "onRequestSuccess");
+/* Redacted catalogue: /products.json and /static/products.json serve the same
+   catalogue with every storage URL stripped, so product metadata can never
+   publish a bucket URL again. Serves the live asset when available, falling
+   back to the embedded catalogue; both are redacted. */
+const WV_REDACTED_KEYS = new Set(["r2_download_url", "download_url", "zip_path", "public_url", "file_url"]);
+function wvStripStorageUrls(value) {
+  if (Array.isArray(value)) return value.map(wvStripStorageUrls);
+  if (value && typeof value === "object") {
+    const out = {};
+    for (const [k, v] of Object.entries(value)) {
+      if (WV_REDACTED_KEYS.has(k)) continue;
+      out[k] = wvStripStorageUrls(v);
+    }
+    return out;
+  }
+  if (typeof value === "string" && (value.includes("r2.dev") || value.includes("/run/media/wildbill/storage/"))) return "";
+  return value;
+}
+async function onRequestCatalogue(context) {
+  const { request, env } = context;
+  try {
+    if (env.ASSETS) {
+      try {
+        const res = await env.ASSETS.fetch(new URL(request.url).pathname, { method: "GET" });
+        if (res.ok) {
+          const data = wvStripStorageUrls(await res.json());
+          return wvJson(data, 200, { "cache-control": "public, max-age=300" });
+        }
+      } catch (e) {
+        console.error("Asset catalogue redaction failed, using embedded catalogue:", e);
+      }
+    }
+    return wvJson(wvStripStorageUrls(products_default), 200, { "cache-control": "public, max-age=300" });
+  } catch (err) {
+    console.error("Catalogue error:", err);
+    return wvJson({ error: "internal error" }, 500);
+  }
+}
+__name(onRequestCatalogue, "onRequestCatalogue");
+__name2(onRequestCatalogue, "onRequestCatalogue");
 __name(onRequest2, "onRequest2");
 __name2(onRequest2, "onRequest");
 var routes = [
@@ -1531,6 +1725,48 @@ var routes = [
     method: "",
     middlewares: [],
     modules: [onRequest2]
+  },
+  {
+    routePath: "/api/download/:token",
+    mountPath: "/api",
+    method: "GET",
+    middlewares: [],
+    modules: [onRequest2]
+  },
+  {
+    routePath: "/api/download-link",
+    mountPath: "/api",
+    method: "GET",
+    middlewares: [],
+    modules: [onRequestDownloadLink]
+  },
+  {
+    routePath: "/success",
+    mountPath: "",
+    method: "GET",
+    middlewares: [],
+    modules: [onRequestSuccess]
+  },
+  {
+    routePath: "/success.html",
+    mountPath: "",
+    method: "GET",
+    middlewares: [],
+    modules: [onRequestSuccess]
+  },
+  {
+    routePath: "/products.json",
+    mountPath: "",
+    method: "GET",
+    middlewares: [],
+    modules: [onRequestCatalogue]
+  },
+  {
+    routePath: "/static/products.json",
+    mountPath: "",
+    method: "GET",
+    middlewares: [],
+    modules: [onRequestCatalogue]
   }
 ];
 function lexer(str) {
@@ -1961,12 +2197,14 @@ var pages_template_worker_default = {
           throw new Error("Your Pages function should return a Response");
         }
         return cloneResponse(response);
-      } else if ("ASSETS") {
-        const response = await env["ASSETS"].fetch(request);
+      } else if (env.ASSETS) {
+        const response = await env.ASSETS.fetch(request);
         return cloneResponse(response);
       } else {
-        const response = await fetch(request);
-        return cloneResponse(response);
+        return new Response(JSON.stringify({ error: "not found" }), {
+          status: 404,
+          headers: { "Content-Type": "application/json" }
+        });
       }
     }, "next");
     try {

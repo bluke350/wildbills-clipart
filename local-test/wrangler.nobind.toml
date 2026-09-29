@@ -1,0 +1,8 @@
+# LOCAL TEST ONLY — a misconfigured deployment with NO R2 binding at all:
+# /api/download must fail closed (500) and name both acceptable bindings.
+name = "wildbills-vault-nobinding-local"
+main = "../wildbills-vault-worker.js"
+compatibility_date = "2025-01-01"
+
+[vars]
+TOKEN_TTL_SECONDS = "3600"

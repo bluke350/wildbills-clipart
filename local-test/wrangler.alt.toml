@@ -1,0 +1,14 @@
+# LOCAL TEST ONLY — mirrors the OWNER'S REAL binding list: the R2 bucket is
+# bound as `wildbills` (NOT PAID_BUNDLES), and LEADS_ADMIN_KEY is set, proving
+# gated delivery + admin-key-from-env work with zero dashboard changes.
+name = "wildbills-vault-alt-binding-local"
+main = "../wildbills-vault-worker.js"
+compatibility_date = "2025-01-01"
+
+[vars]
+TOKEN_TTL_SECONDS = "3600"
+LEADS_ADMIN_KEY = "alt-config-admin-key-123"
+
+[[r2_buckets]]
+binding = "wildbills"
+bucket_name = "wildbills-vault-bundles-local"
