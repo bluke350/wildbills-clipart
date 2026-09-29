@@ -1,0 +1,62 @@
+Testing merged worker at http://127.0.0.1:8787
+
+  PASS  no token -> 400  —  status=400
+  PASS  legacy public shape (?sku=) rejected -> 401  —  status=401
+  PASS  legacy rejection is JSON, not a redirect  —  {"error":"downloads require a signed, expiring token issued after payment"}
+  PASS  legacy ?file= shape rejected -> 401  —  status=401
+  PASS  tampered token -> 403  —  status=403 body={"error":"invalid download token"}
+  PASS  garbage token -> 403  —  status=403
+  PASS  tampered token via ?token= query -> 403  —  status=403
+  PASS  expired token -> 403  —  status=403 body={"error":"download link expired","sku":"WB-BND-003"}
+  PASS  unknown SKU (forged with our test secret) -> 403  —  status=403 body={"error":"unknown product SKU","sku":"WB-BND-999"}
+  PASS  valid token -> 200  —  status=200
+  PASS  content-type is application/zip  —  application/zip
+  PASS  content-disposition carries the filename  —  attachment; filename="bundle_bass_fishing.zip"
+  PASS  content-length matches object  —  2561406 vs 2561406
+  PASS  accept-ranges: bytes  —  bytes
+  PASS  cache-control is private/no-store  —  private, no-store
+  PASS  served bytes == object bytes (sha256)  —  4a90f4de829f0441…
+  PASS  no public r2.dev URL leaked in body/headers
+  PASS  range 0-99 -> 206  —  status=206
+  PASS  content-range correct  —  bytes 0-99/2561406
+  PASS  100 bytes served  —  100B
+  PASS  open-ended tail range -> 206  —  status=206 len=50
+  PASS  POST /api/create-checkout -> 200  —  status=200
+  PASS  returns a Stripe checkout URL  —  https://checkout.stripe.com/c/pay/cs_test_new_1790646119935#mock
+  PASS  session id returned  —  cs_test_new_1790646119935
+  PASS  price sent to Stripe is 24.99 (unit_amount 2499)  —  unit_amount=2499 currency=usd mode=payment
+  PASS  session metadata carries the sku  —  {"sku":"WB-BND-003","product_id":"WB-BND-003"}
+  PASS  OPTIONS /api/create-checkout -> 204 (CORS preserved)  —  status=204
+  PASS  webhook valid signature + paid + known SKU -> 200 minted  —  status=200 body={"received":true,"minted":true,"sku":"WB-BND-003","download_
+  PASS  webhook returns a download_url with our token shape  —  http://127.0.0.1:8787/api/download/v1.1790649719.WB-BND-003.
+  PASS  webhook-minted link actually serves the zip  —  status=200
+  PASS  webhook BAD signature -> 400, no link  —  status=400 body={"error":"invalid Stripe signature"}
+  PASS  webhook without stripe-signature header -> 400
+  PASS  webhook STALE timestamp (>5 min) -> 400  —  status=400
+  PASS  webhook signature ok but session NOT paid -> no link  —  status=200 {"received":true,"minted":false,"reason":"session not paid"}
+  PASS  webhook unknown SKU -> no link  —  status=200 {"received":true,"minted":false,"sku":"SKU-NOT-REAL","download_url":nu
+  PASS  download-link with PAID session -> 200 + minted link  —  status=200
+  PASS  issued sku echoes the paid SKU  —  WB-BND-003
+  PASS  download-link-minted link serves the zip  —  status=200
+  PASS  download-link reports expires_in  —  3600
+  PASS  download-link with UNPAID session -> 402, no link  —  status=402 body={"error":"payment not completed"}
+  PASS  download-link with UNKNOWN session -> 502, no link  —  status=502
+  PASS  download-link SKU mismatch vs paid session -> 403  —  status=403
+  PASS  download-link without session_id -> 400  —  status=400
+  PASS  GET /success -> 200 html  —  status=200
+  PASS  success page drives /api/download-link
+  PASS  GET /success.html -> 200 (legacy path preserved)  —  status=200
+  PASS  /products.json parses as the catalogue  —  products=27
+  PASS  /products.json contains no r2.dev URL
+  PASS  /products.json has no storage-URL fields
+  PASS  /products.json still lists WB-BND-003 with price 24.99
+  PASS  /static/products.json parses as the catalogue  —  products=27
+  PASS  /static/products.json contains no r2.dev URL
+  PASS  /static/products.json has no storage-URL fields
+  PASS  /static/products.json still lists WB-BND-003 with price 24.99
+  PASS  GET /api/auto-promote -> 200 JSON  —  status=200
+  PASS  GET /api/free-sample (admin key) reachable  —  status=500 (500 = LEADS_KV unbound locally, as designed)
+  PASS  GET /api/free-sample without key -> 401 (unchanged)  —  status=401
+  PASS  unknown path -> clean 404 JSON (not 500/1101)  —  status=404 body={"error":"not found"}
+
+58 passed, 0 failed

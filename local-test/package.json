@@ -1,0 +1,11 @@
+{
+  "name": "wildbills-vault-local-test",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "test": "node run-tests.mjs"
+  },
+  "devDependencies": {
+    "wrangler": "^4.42.0"
+  }
+}
